@@ -1,0 +1,1017 @@
+<script>
+  // ==================== GLOBAL STATE ====================
+  let currentUser = null;
+  let currentRole = null;
+  let isAdmin = false;
+  let allItemsData = [];
+  let filterOptions = {
+    locations: [],
+    brands: [],
+    categories: [],
+    statuses: [],
+    staffList: []
+  };
+  let currentInputFilter = {};
+  let appInitialized = false;
+  
+  // ==================== INITIALIZATION ====================
+  document.addEventListener('DOMContentLoaded', function() {
+    initializeApp();
+  });
+  
+  function initializeApp() {
+    showLoading(true);
+    
+    // Get current user info first
+    google.script.run
+      .withSuccessHandler(function(email) {
+        setUserEmail(email);
+        
+        google.script.run
+          .withSuccessHandler(function(role) {
+            setUserRole(role);
+            hideAdminElements();
+            
+            // Try to load filter options and dashboard
+            loadFilterOptions()
+              .then(() => loadDashboard())
+              .then(() => {
+                appInitialized = true;
+                showLoading(false);
+              })
+              .catch(err => {
+                console.error('Init warning:', err);
+                showLoading(false);
+              });
+          })
+          .withFailureHandler(function(err) {
+            console.error('Error getting role:', err);
+            document.getElementById('userRole').textContent = 'Staff';
+            showLoading(false);
+          })
+          .getCurrentUserRole();
+      })
+      .withFailureHandler(function(err) {
+        console.error('Error getting email:', err);
+        document.getElementById('userEmail').textContent = 'Unknown';
+        showLoading(false);
+      })
+      .getCurrentUserEmail();
+  }
+  
+  function setUserRole(role) {
+    currentRole = role || 'Staff';
+    isAdmin = currentRole === 'Admin';
+    document.getElementById('userRole').textContent = currentRole;
+    
+    if (!isAdmin) {
+      document.querySelectorAll('.admin-only').forEach(el => {
+        el.style.display = 'none';
+      });
+    }
+  }
+  
+  function setUserEmail(email) {
+    currentUser = email || '';
+    document.getElementById('userEmail').textContent = currentUser;
+  }
+  
+  function hideAdminElements() {
+    if (!isAdmin) {
+      document.querySelectorAll('.admin-only').forEach(el => {
+        el.style.display = 'none';
+      });
+    }
+  }
+  
+  function showLoading(show) {
+    const overlay = document.getElementById('loadingOverlay');
+    if (overlay) {
+      if (show) {
+        overlay.classList.remove('hidden');
+      } else {
+        overlay.classList.add('hidden');
+      }
+    }
+  }
+  
+  // ==================== PAGE NAVIGATION ====================
+  function showPage(pageName) {
+    // Hide all pages
+    document.querySelectorAll('.page-content').forEach(page => {
+      page.style.display = 'none';
+    });
+    
+    // Show selected page
+    const targetPage = document.getElementById(`page-${pageName}`);
+    if (targetPage) {
+      targetPage.style.display = 'block';
+    }
+    
+    // Update nav active state
+    document.querySelectorAll('.nav-link').forEach(link => {
+      link.classList.remove('active');
+    });
+    if (event && event.target) {
+      const navLink = event.target.closest('.nav-link');
+      if (navLink) {
+        navLink.classList.add('active');
+      }
+    }
+    
+    // Load page data
+    switch(pageName) {
+      case 'dashboard':
+        loadDashboard();
+        break;
+      case 'input':
+        loadInputItems();
+        break;
+      case 'allItems':
+        loadAllItems();
+        break;
+      case 'assignment':
+        loadAssignmentPage();
+        break;
+      case 'report':
+        loadReport();
+        break;
+      case 'users':
+        loadUsers();
+        break;
+    }
+  }
+  
+  // ==================== FILTER OPTIONS ====================
+  function loadFilterOptions() {
+    return new Promise((resolve) => {
+      google.script.run
+        .withSuccessHandler(function(options) {
+          if (options && typeof options === 'object') {
+            filterOptions = {
+              locations: options.locations || [],
+              brands: options.brands || [],
+              categories: options.categories || [],
+              statuses: options.statuses || [],
+              staffList: options.staffList || []
+            };
+          }
+          populateFilterDropdowns();
+          resolve();
+        })
+        .withFailureHandler(function(err) {
+          console.error('Error loading filters:', err);
+          resolve();
+        })
+        .getFilterOptions();
+    });
+  }
+  
+  function populateFilterDropdowns() {
+    // Safety check - ensure filterOptions has required arrays
+    const locations = filterOptions.locations || [];
+    const brands = filterOptions.brands || [];
+    const categories = filterOptions.categories || [];
+    
+    // Location dropdowns
+    const locationDropdowns = ['filterLocationInput', 'filterAllLocation', 'reportLocation'];
+    locationDropdowns.forEach(id => {
+      const select = document.getElementById(id);
+      if (select) {
+        select.innerHTML = '<option value="">Semua Lokasi</option>';
+        locations.forEach(loc => {
+          select.innerHTML += `<option value="${loc}">${loc}</option>`;
+        });
+      }
+    });
+    
+    // Brand dropdowns
+    const brandDropdowns = ['filterAllBrand', 'reportBrand'];
+    brandDropdowns.forEach(id => {
+      const select = document.getElementById(id);
+      if (select) {
+        select.innerHTML = '<option value="">Semua Brand</option>';
+        brands.forEach(brand => {
+          select.innerHTML += `<option value="${brand}">${brand}</option>`;
+        });
+      }
+    });
+    
+    // Category dropdowns
+    const categoryDropdowns = ['filterAllCategory', 'reportCategory'];
+    categoryDropdowns.forEach(id => {
+      const select = document.getElementById(id);
+      if (select) {
+        select.innerHTML = '<option value="">Semua Kategori</option>';
+        categories.forEach(cat => {
+          select.innerHTML += `<option value="${cat}">${cat}</option>`;
+        });
+      }
+    });
+    
+    // Staff dropdown (for assignment)
+    const staffList = filterOptions.staffList || [];
+    const staffSelect = document.getElementById('assignStaff');
+    if (staffSelect) {
+      staffSelect.innerHTML = '<option value="">-- Pilih Staff --</option>';
+      staffList.forEach(staff => {
+        staffSelect.innerHTML += `<option value="${staff}">${staff}</option>`;
+      });
+    }
+  }
+  
+  // ==================== DASHBOARD ====================
+  function loadDashboard() {
+    return new Promise((resolve) => {
+      google.script.run
+        .withSuccessHandler(function(data) {
+          if (data.error) {
+            alert('Error: ' + data.error);
+            resolve();
+            return;
+          }
+          
+          // Update summary cards
+          document.getElementById('totalItems').textContent = data.totalItems;
+          document.getElementById('countedItems').textContent = data.countedItems;
+          document.getElementById('matchItems').textContent = data.matchItems;
+          document.getElementById('selisihItems').textContent = data.selisihItems;
+          
+          // Update progress bar
+          const progressBar = document.getElementById('progressBar');
+          progressBar.style.width = data.percentage + '%';
+          progressBar.textContent = data.percentage + '%';
+          
+          if (data.percentage >= 100) {
+            progressBar.classList.add('bg-success');
+          } else if (data.percentage >= 50) {
+            progressBar.classList.add('bg-info');
+          }
+          
+          // Update location stats
+          renderLocationStats(data.locationStats);
+          
+          // Update staff stats
+          if (isAdmin) {
+            renderStaffStats(data.staffStats);
+          }
+          
+          resolve();
+        })
+        .withFailureHandler(function(err) {
+          console.error('Error loading dashboard:', err);
+          resolve();
+        })
+        .getDashboardData();
+    });
+  }
+  
+  function renderLocationStats(stats) {
+    const container = document.getElementById('locationStats');
+    container.innerHTML = '';
+    
+    Object.keys(stats).sort().forEach(location => {
+      const stat = stats[location];
+      const percentage = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
+      
+      const html = `
+        <div class="location-stat-item">
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="location-name">${location}</span>
+            <span class="text-muted">${stat.counted} / ${stat.total} item</span>
+          </div>
+          <div class="progress">
+            <div class="progress-bar ${percentage >= 100 ? 'bg-success' : percentage >= 50 ? 'bg-info' : 'bg-warning'}" 
+                 role="progressbar" style="width: ${percentage}%">${percentage}%</div>
+          </div>
+          <div class="d-flex gap-3 mt-1">
+            <small class="text-success"><i class="bi bi-check-circle"></i> Match: ${stat.match}</small>
+            <small class="text-danger"><i class="bi bi-exclamation-circle"></i> Selisih: ${stat.selisih}</small>
+          </div>
+        </div>
+      `;
+      container.innerHTML += html;
+    });
+  }
+  
+  function renderStaffStats(stats) {
+    const container = document.getElementById('staffStats');
+    container.innerHTML = '';
+    
+    Object.keys(stats).sort().forEach(staff => {
+      const stat = stats[staff];
+      const percentage = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
+      
+      const html = `
+        <div class="location-stat-item">
+          <div class="d-flex justify-content-between align-items-center">
+            <span class="location-name">${staff || 'Unassigned'}</span>
+            <span class="text-muted">${stat.counted} / ${stat.total} item</span>
+          </div>
+          <div class="progress">
+            <div class="progress-bar ${percentage >= 100 ? 'bg-success' : percentage >= 50 ? 'bg-info' : 'bg-warning'}" 
+                 role="progressbar" style="width: ${percentage}%">${percentage}%</div>
+          </div>
+        </div>
+      `;
+      container.innerHTML += html;
+    });
+  }
+  
+  // ==================== INPUT STOK ====================
+  function loadInputItems() {
+    const search = document.getElementById('searchInput').value;
+    const location = document.getElementById('filterLocationInput').value;
+    const status = document.getElementById('filterStatusInput').value;
+    
+    const filters = {};
+    if (search) filters.search = search;
+    if (location) filters.location = location;
+    if (status) filters.status = status;
+    
+    // For staff, only show assigned items
+    if (!isAdmin) {
+      filters.assignedTo = currentUser;
+    }
+    
+    google.script.run
+      .withSuccessHandler(function(items) {
+        allItemsData = items;
+        renderInputItems(items);
+      })
+      .withFailureHandler(function(err) {
+        console.error('Error loading items:', err);
+      })
+      .getAllItems(filters);
+  }
+  
+  function filterInputItems() {
+    loadInputItems();
+  }
+  
+  function renderInputItems(items) {
+    const container = document.getElementById('inputItemsList');
+    
+    if (items.length === 0) {
+      container.innerHTML = `
+        <div class="empty-state">
+          <i class="bi bi-inbox"></i>
+          <p class="mt-2">Tidak ada item ditemukan</p>
+        </div>
+      `;
+      return;
+    }
+    
+    let html = '';
+    items.forEach(item => {
+      const statusClass = item.status === 'Match' ? 'status-match' : 
+                         item.status === 'Selisih' ? 'status-selisih' : 'status-belum';
+      
+      html += `
+        <div class="item-card ${statusClass}" onclick="openInputModal(${item.id})">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="product-name">${item.productName}</div>
+              <div class="product-sku">${item.internalRef} | ${item.brand} | ${item.location}</div>
+            </div>
+            <span class="badge badge-${item.status.toLowerCase()}">${item.status}</span>
+          </div>
+          <div class="qty-info">
+            <span class="qty-badge qty-system">System: ${item.qtySystem}</span>
+            ${item.qtyFisik !== '' ? `<span class="qty-badge qty-fisik">Fisik: ${item.qtyFisik}</span>` : ''}
+            ${item.selisih !== '' ? `<span class="qty-badge qty-selisih">Selisih: ${item.selisih}</span>` : ''}
+          </div>
+        </div>
+      `;
+    });
+    
+    container.innerHTML = html;
+  }
+  
+  // ==================== INPUT MODAL ====================
+  function openInputModal(itemId) {
+    const item = allItemsData.find(i => i.id == itemId);
+    if (!item) return;
+    
+    document.getElementById('modalItemId').value = item.id;
+    document.getElementById('modalProductName').textContent = item.productName;
+    document.getElementById('modalSKU').textContent = item.internalRef;
+    document.getElementById('modalQtySystem').textContent = item.qtySystem;
+    document.getElementById('modalQtyFisik').value = item.qtyFisik || '';
+    document.getElementById('modalKeterangan').value = item.keterangan || '';
+    document.getElementById('modalKeteranganText').value = '';
+    
+    const modal = new bootstrap.Modal(document.getElementById('inputModal'));
+    modal.show();
+  }
+  
+  function submitItemCount() {
+    const itemId = document.getElementById('modalItemId').value;
+    const qtyFisik = parseInt(document.getElementById('modalQtyFisik').value);
+    const keteranganSelect = document.getElementById('modalKeterangan').value;
+    const keteranganText = document.getElementById('modalKeteranganText').value;
+    const keterangan = keteranganSelect + (keteranganText ? ' - ' + keteranganText : '');
+    
+    if (isNaN(qtyFisik) || qtyFisik < 0) {
+      alert('Qty Fisik harus berupa angka >= 0');
+      return;
+    }
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        if (result.error) {
+          alert('Error: ' + result.error);
+          return;
+        }
+        
+        // Close modal
+        bootstrap.Modal.getInstance(document.getElementById('inputModal')).hide();
+        
+        // Reload items
+        loadInputItems();
+        
+        // Show success message
+        showToast('Berhasil', `Qty Fisik berhasil disimpan. Selisih: ${result.selisih}`, 'success');
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .submitCount(parseInt(itemId), qtyFisik, keterangan);
+  }
+  
+  // ==================== ALL ITEMS ====================
+  function loadAllItems() {
+    const location = document.getElementById('filterAllLocation').value;
+    const brand = document.getElementById('filterAllBrand').value;
+    const category = document.getElementById('filterAllCategory').value;
+    const status = document.getElementById('filterAllStatus').value;
+    const search = document.getElementById('searchAll').value;
+    
+    const filters = {};
+    if (location) filters.location = location;
+    if (brand) filters.brand = brand;
+    if (category) filters.category = category;
+    if (status) filters.status = status;
+    if (search) filters.search = search;
+    
+    google.script.run
+      .withSuccessHandler(function(items) {
+        allItemsData = items;
+        renderAllItemsTable(items);
+      })
+      .withFailureHandler(function(err) {
+        console.error('Error loading items:', err);
+      })
+      .getAllItems(filters);
+  }
+  
+  function renderAllItemsTable(items) {
+    const tbody = document.getElementById('allItemsBody');
+    
+    if (items.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="11" class="text-center text-muted">Tidak ada data</td>
+        </tr>
+      `;
+      return;
+    }
+    
+    let html = '';
+    items.forEach(item => {
+      const rowClass = item.status === 'Selisih' ? 'table-selisih' : 
+                      item.status === 'Match' ? 'table-match' : '';
+      
+      html += `
+        <tr class="${rowClass}">
+          <td>${item.id}</td>
+          <td>${item.location}</td>
+          <td title="${item.productName}">${truncate(item.productName, 40)}</td>
+          <td>${item.internalRef}</td>
+          <td>${item.brand}</td>
+          <td>${item.qtySystem}</td>
+          <td>${item.qtyFisik !== '' ? item.qtyFisik : '-'}</td>
+          <td>${item.selisih !== '' ? item.selisih : '-'}</td>
+          <td><span class="badge badge-${item.status.toLowerCase()}">${item.status}</span></td>
+          <td title="${item.assignedTo}">${truncate(item.assignedTo, 20)}</td>
+          <td>
+            <button class="btn btn-sm btn-primary" onclick="openInputModal(${item.id})">
+              <i class="bi bi-pencil"></i>
+            </button>
+          </td>
+        </tr>
+      `;
+    });
+    
+    tbody.innerHTML = html;
+  }
+  
+  function truncate(str, len) {
+    if (!str) return '';
+    return str.length > len ? str.substring(0, len) + '...' : str;
+  }
+  
+  function exportCurrentView() {
+    const location = document.getElementById('filterAllLocation').value;
+    const brand = document.getElementById('filterAllBrand').value;
+    const category = document.getElementById('filterAllCategory').value;
+    const status = document.getElementById('filterAllStatus').value;
+    
+    const filters = {};
+    if (location) filters.location = location;
+    if (brand) filters.brand = brand;
+    if (category) filters.category = category;
+    if (status) filters.status = status;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(csv) {
+        showLoading(false);
+        downloadCSV(csv, 'stock-opname-export.csv');
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .exportToCSV(filters);
+  }
+  
+  function downloadCSV(csv, filename) {
+    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    const link = document.createElement('a');
+    link.href = URL.createObjectURL(blob);
+    link.download = filename;
+    link.click();
+  }
+  
+  // ==================== ASSIGNMENT PAGE ====================
+  function loadAssignmentPage() {
+    // Load staff list for dropdown
+    google.script.run
+      .withSuccessHandler(function(users) {
+        const staffSelect = document.getElementById('assignStaff');
+        staffSelect.innerHTML = '<option value="">-- Pilih Staff --</option>';
+        users.filter(u => u.role === 'Staff' && u.status === 'Active').forEach(user => {
+          staffSelect.innerHTML += `<option value="${user.email}">${user.name} (${user.email})</option>`;
+        });
+      })
+      .getUsers();
+    
+    // Load filter options for assignment
+    updateFilterOptions();
+    
+    // Load current assignments
+    loadAssignments();
+  }
+  
+  function updateFilterOptions() {
+    const filterType = document.getElementById('assignFilterType').value;
+    const filterValueSelect = document.getElementById('assignFilterValue');
+    
+    filterValueSelect.innerHTML = '';
+    
+    switch(filterType) {
+      case 'Location':
+        filterOptions.locations.forEach(loc => {
+          filterValueSelect.innerHTML += `<option value="${loc}">${loc}</option>`;
+        });
+        break;
+      case 'Brand':
+        filterOptions.brands.forEach(brand => {
+          filterValueSelect.innerHTML += `<option value="${brand}">${brand}</option>`;
+        });
+        break;
+      case 'Category':
+        filterOptions.categories.forEach(cat => {
+          filterValueSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
+        });
+        break;
+      case 'All':
+        filterValueSelect.innerHTML = '<option value="all">Semua Item</option>';
+        break;
+    }
+  }
+  
+  function loadAssignments() {
+    google.script.run
+      .withSuccessHandler(function(assignments) {
+        renderAssignments(assignments);
+      })
+      .getAssignments();
+  }
+  
+  function renderAssignments(assignments) {
+    const container = document.getElementById('assignmentsList');
+    
+    if (assignments.length === 0) {
+      container.innerHTML = '<p class="text-muted">Belum ada assignment</p>';
+      return;
+    }
+    
+    let html = '';
+    assignments.filter(a => a.status === 'Active').forEach(assignment => {
+      html += `
+        <div class="assignment-card">
+          <div class="d-flex justify-content-between align-items-start">
+            <div>
+              <div class="user-email">${assignment.userEmail}</div>
+              <div class="filter-info">
+                <i class="bi bi-funnel"></i> ${assignment.filterType}: ${assignment.filterValue}
+              </div>
+              <small class="text-muted">${new Date(assignment.dateAssigned).toLocaleString('id-ID')}</small>
+            </div>
+            <button class="btn btn-sm btn-danger" onclick="removeAssignment('${assignment.id}')">
+              <i class="bi bi-trash"></i>
+            </button>
+          </div>
+        </div>
+      `;
+    });
+    
+    container.innerHTML = html || '<p class="text-muted">Belum ada assignment aktif</p>';
+  }
+  
+  function createAssignment() {
+    const userEmail = document.getElementById('assignStaff').value;
+    const filterType = document.getElementById('assignFilterType').value;
+    const filterValue = document.getElementById('assignFilterValue').value;
+    
+    if (!userEmail) {
+      alert('Pilih staff terlebih dahulu');
+      return;
+    }
+    
+    if (!filterValue) {
+      alert('Pilih filter value');
+      return;
+    }
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        if (result.error) {
+          alert('Error: ' + result.error);
+          return;
+        }
+        
+        showToast('Berhasil', `${result.assignedCount} item berhasil di-assign ke ${userEmail}`, 'success');
+        loadAssignments();
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .assignItems(userEmail, filterType, filterValue);
+  }
+  
+  function removeAssignment(assignmentId) {
+    if (!confirm('Hapus assignment ini?')) return;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        if (result.error) {
+          alert('Error: ' + result.error);
+          return;
+        }
+        
+        showToast('Berhasil', 'Assignment berhasil dihapus', 'success');
+        loadAssignments();
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .removeAssignment(assignmentId);
+  }
+  
+  // ==================== REPORT PAGE ====================
+  function loadReport() {
+    const location = document.getElementById('reportLocation').value;
+    const brand = document.getElementById('reportBrand').value;
+    const category = document.getElementById('reportCategory').value;
+    const status = document.getElementById('reportStatus').value;
+    
+    const filters = {};
+    if (location) filters.location = location;
+    if (brand) filters.brand = brand;
+    if (category) filters.category = category;
+    if (status) filters.status = status;
+    
+    google.script.run
+      .withSuccessHandler(function(report) {
+        renderReport(report);
+      })
+      .getReconciliationReport(filters);
+  }
+  
+  function renderReport(report) {
+    // Update summary
+    document.getElementById('reportTotalSystem').textContent = report.totalQtySystem;
+    document.getElementById('reportTotalFisik').textContent = report.totalQtyFisik;
+    document.getElementById('reportTotalSelisih').textContent = report.totalSelisih;
+    
+    // Render table
+    const tbody = document.getElementById('reportBody');
+    
+    if (report.items.length === 0) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="10" class="text-center text-muted">Tidak ada data yang sudah dihitung</td>
+        </tr>
+      `;
+      return;
+    }
+    
+    let html = '';
+    report.items.forEach(item => {
+      const rowClass = item.selisih !== 0 ? 'table-selisih' : 'table-match';
+      
+      html += `
+        <tr class="${rowClass}">
+          <td>${item.id}</td>
+          <td>${item.location}</td>
+          <td title="${item.productName}">${truncate(item.productName, 40)}</td>
+          <td>${item.internalRef}</td>
+          <td>${item.brand}</td>
+          <td>${item.qtySystem}</td>
+          <td>${item.qtyFisik}</td>
+          <td class="${item.selisih !== 0 ? 'text-danger fw-bold' : ''}">${item.selisih}</td>
+          <td>${item.keterangan || '-'}</td>
+          <td>${item.inputter || '-'}</td>
+        </tr>
+      `;
+    });
+    
+    tbody.innerHTML = html;
+  }
+  
+  function exportReport() {
+    const location = document.getElementById('reportLocation').value;
+    const brand = document.getElementById('reportBrand').value;
+    const category = document.getElementById('reportCategory').value;
+    const status = document.getElementById('reportStatus').value;
+    
+    const filters = {};
+    if (location) filters.location = location;
+    if (brand) filters.brand = brand;
+    if (category) filters.category = category;
+    if (status) filters.status = status;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(csv) {
+        showLoading(false);
+        downloadCSV(csv, 'stock-opname-report.csv');
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .exportToCSV(filters);
+  }
+  
+  // ==================== USERS PAGE ====================
+  function loadUsers() {
+    google.script.run
+      .withSuccessHandler(function(users) {
+        renderUsers(users);
+      })
+      .getUsers();
+  }
+  
+  function renderUsers(users) {
+    const container = document.getElementById('usersList');
+    
+    if (users.length === 0) {
+      container.innerHTML = '<p class="text-muted">Belum ada user</p>';
+      return;
+    }
+    
+    let html = '';
+    users.forEach(user => {
+      const statusBadge = user.status === 'Active' ? 'bg-success' : 'bg-secondary';
+      
+      html += `
+        <div class="user-card">
+          <div class="user-info">
+            <div class="user-name">${user.name}</div>
+            <div class="user-email">${user.email}</div>
+            <div>
+              <span class="badge bg-primary">${user.role}</span>
+              <span class="badge ${statusBadge}">${user.status}</span>
+            </div>
+          </div>
+          <div>
+            ${user.status === 'Active' ? 
+              `<button class="btn btn-sm btn-warning" onclick="toggleUserStatus('${user.email}', 'Inactive')">Nonaktifkan</button>` :
+              `<button class="btn btn-sm btn-success" onclick="toggleUserStatus('${user.email}', 'Active')">Aktifkan</button>`
+            }
+          </div>
+        </div>
+      `;
+    });
+    
+    container.innerHTML = html;
+  }
+  
+  function addNewUser() {
+    const email = document.getElementById('newUserEmail').value;
+    const name = document.getElementById('newUserName').value;
+    const role = document.getElementById('newUserRole').value;
+    
+    if (!email || !name) {
+      alert('Email dan Nama harus diisi');
+      return;
+    }
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        if (result.error) {
+          alert('Error: ' + result.error);
+          return;
+        }
+        
+        showToast('Berhasil', `User ${email} berhasil ditambahkan`, 'success');
+        
+        // Clear form
+        document.getElementById('newUserEmail').value = '';
+        document.getElementById('newUserName').value = '';
+        
+        // Reload users
+        loadUsers();
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .addUser(email, name, role);
+  }
+  
+  function toggleUserStatus(email, newStatus) {
+    const action = newStatus === 'Active' ? 'mengaktifkan' : 'menonaktifkan';
+    if (!confirm(`Yakin ingin ${action} user ${email}?`)) return;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        if (result.error) {
+          alert('Error: ' + result.error);
+          return;
+        }
+        
+        showToast('Berhasil', `Status user ${email} berhasil diubah`, 'success');
+        loadUsers();
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .updateUserStatus(email, newStatus);
+  }
+  
+  // ==================== IMPORT CSV ====================
+  function parseCSV() {
+    if (!confirm('Parse CSV dari sheet Import? Data yang ada di sheet Data akan di-overwrite.')) return;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        const resultDiv = document.getElementById('importResult');
+        
+        if (result.error) {
+          resultDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+          return;
+        }
+        
+        resultDiv.innerHTML = `<div class="alert alert-success">Berhasil! ${result.count} item berhasil di-import.</div>`;
+        
+        // Reload filter options
+        loadFilterOptions();
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        document.getElementById('importResult').innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+      })
+      .parseCSVFromSheet();
+  }
+  
+  function initializeAllSheets() {
+    if (!confirm('Initialize semua sheets? Ini akan membuat sheets yang belum ada.')) return;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        showToast('Berhasil', result, 'success');
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .initializeSheets();
+  }
+  
+  function confirmReset() {
+    if (!confirm('PERINGATAN: Ini akan menghapus SEMUA data di sheet Data dan Assignment. Lanjutkan?')) return;
+    if (!confirm('Apakah Anda YAKIN? Data tidak bisa dikembalikan!')) return;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        if (result.error) {
+          alert('Error: ' + result.error);
+          return;
+        }
+        
+        showToast('Berhasil', 'Semua data berhasil di-reset', 'success');
+        loadDashboard();
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .resetAllData();
+  }
+  
+  function confirmClearAssignments() {
+    if (!confirm('Hapus semua assignment?')) return;
+    
+    showLoading(true);
+    
+    google.script.run
+      .withSuccessHandler(function(result) {
+        showLoading(false);
+        
+        if (result.error) {
+          alert('Error: ' + result.error);
+          return;
+        }
+        
+        showToast('Berhasil', 'Semua assignment berhasil dihapus', 'success');
+      })
+      .withFailureHandler(function(err) {
+        showLoading(false);
+        alert('Error: ' + err.message);
+      })
+      .clearAllAssignments();
+  }
+  
+  // ==================== TOAST NOTIFICATIONS ====================
+  function showToast(title, message, type = 'info') {
+    const toastContainer = document.getElementById('toastContainer');
+    if (!toastContainer) {
+      const container = document.createElement('div');
+      container.id = 'toastContainer';
+      container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000;';
+      document.body.appendChild(container);
+    }
+    
+    const bgClass = type === 'success' ? 'bg-success' : type === 'error' ? 'bg-danger' : 'bg-info';
+    
+    const toastHtml = `
+      <div class="toast show ${bgClass} text-white" role="alert">
+        <div class="toast-header ${bgClass} text-white">
+          <strong class="me-auto">${title}</strong>
+          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
+        </div>
+        <div class="toast-body">${message}</div>
+      </div>
+    `;
+    
+    document.getElementById('toastContainer').innerHTML = toastHtml;
+    
+    // Auto hide after 3 seconds
+    setTimeout(() => {
+      const toast = document.querySelector('.toast');
+      if (toast) toast.remove();
+    }, 3000);
+  }
+</script>
