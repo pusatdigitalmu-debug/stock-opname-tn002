@@ -1,976 +1,715 @@
 <script>
-  // ==================== GLOBAL STATE ====================
-  var currentUser = '';
-  var currentRole = 'Staff';
-  var isAdmin = false;
-  var allItemsData = [];
-  var filterOptions = {
-    locations: [],
-    brands: [],
-    categories: [],
-    statuses: [],
-    staffList: []
-  };
+var currentUser = '';
+var currentRole = 'Staff';
+var isAdmin = false;
+var allItemsData = [];
+
+window.onload = function() {
+  startApp();
+};
+
+function startApp() {
+  document.getElementById('loadingOverlay').style.display = 'flex';
   
-  // ==================== INITIALIZATION ====================
-  window.onload = function() {
-    initApp();
-  };
-  
-  function initApp() {
-    showLoading(true);
-    
-    // Step 1: Get user email
-    google.script.run
-      .withSuccessHandler(function(email) {
-        currentUser = email || '';
-        document.getElementById('userEmail').textContent = currentUser;
-        
-        // Step 2: Get user role
-        google.script.run
-          .withSuccessHandler(function(role) {
-            currentRole = role || 'Staff';
-            isAdmin = (currentRole === 'Admin');
-            document.getElementById('userRole').textContent = currentRole;
-            
-            if (!isAdmin) {
-              hideElementsByClass('admin-only');
-            }
-            
-            // Step 3: Load filter options
-            loadFiltersAndDashboard();
-          })
-          .withFailureHandler(function() {
-            document.getElementById('userRole').textContent = 'Staff';
-            loadFiltersAndDashboard();
-          })
-          .getCurrentUserRole();
-      })
-      .withFailureHandler(function() {
-        document.getElementById('userEmail').textContent = 'Unknown';
-        document.getElementById('userRole').textContent = 'Staff';
-        showLoading(false);
-      })
-      .getCurrentUserEmail();
-  }
-  
-  function hideElementsByClass(className) {
-    var elements = document.getElementsByClassName(className);
-    for (var i = 0; i < elements.length; i++) {
-      elements[i].style.display = 'none';
-    }
-  }
-  
-  function loadFiltersAndDashboard() {
-    google.script.run
-      .withSuccessHandler(function(options) {
-        if (options && options.locations) {
-          filterOptions.locations = options.locations || [];
-          filterOptions.brands = options.brands || [];
-          filterOptions.categories = options.categories || [];
-          filterOptions.statuses = options.statuses || [];
-          filterOptions.staffList = options.staffList || [];
+  google.script.run
+    .withSuccessHandler(function(email) {
+      currentUser = email || '';
+      document.getElementById('userEmail').innerHTML = currentUser;
+      getRole();
+    })
+    .withFailureHandler(function() {
+      document.getElementById('userEmail').innerHTML = 'Unknown';
+      document.getElementById('userRole').innerHTML = 'Staff';
+      document.getElementById('loadingOverlay').style.display = 'none';
+    })
+    .getCurrentUserEmail();
+}
+
+function getRole() {
+  google.script.run
+    .withSuccessHandler(function(role) {
+      currentRole = role || 'Staff';
+      isAdmin = (currentRole === 'Admin');
+      document.getElementById('userRole').innerHTML = currentRole;
+      
+      if (!isAdmin) {
+        var elems = document.getElementsByClassName('admin-only');
+        for (var i = 0; i < elems.length; i++) {
+          elems[i].style.display = 'none';
         }
-        
-        populateAllDropdowns();
-        
-        // Load dashboard
-        google.script.run
-          .withSuccessHandler(function(data) {
-            updateDashboard(data);
-            showLoading(false);
-          })
-          .withFailureHandler(function() {
-            showLoading(false);
-          })
-          .getDashboardData();
-      })
-      .withFailureHandler(function() {
-        showLoading(false);
-      })
-      .getFilterOptions();
-  }
-  
-  function showLoading(show) {
-    var overlay = document.getElementById('loadingOverlay');
-    if (overlay) {
-      if (show) {
-        overlay.style.display = 'flex';
-      } else {
-        overlay.style.display = 'none';
       }
-    }
-  }
-  
-  // ==================== POPULATE DROPDOWNS ====================
-  function populateAllDropdowns() {
-    var locs = filterOptions.locations || [];
-    var brands = filterOptions.brands || [];
-    var cats = filterOptions.categories || [];
-    
-    // Location dropdowns
-    setDropdownOptions('filterLocationInput', locs, 'Semua Lokasi');
-    setDropdownOptions('filterAllLocation', locs, 'Semua Lokasi');
-    setDropdownOptions('reportLocation', locs, 'Semua Lokasi');
-    
-    // Brand dropdowns
-    setDropdownOptions('filterAllBrand', brands, 'Semua Brand');
-    setDropdownOptions('reportBrand', brands, 'Semua Brand');
-    
-    // Category dropdowns
-    setDropdownOptions('filterAllCategory', cats, 'Semua Kategori');
-    setDropdownOptions('reportCategory', cats, 'Semua Kategori');
-  }
-  
-  function setDropdownOptions(elementId, options, defaultText) {
-    var select = document.getElementById(elementId);
-    if (!select) return;
-    
-    select.innerHTML = '<option value="">' + defaultText + '</option>';
-    
-    if (options && options.length > 0) {
-      for (var i = 0; i < options.length; i++) {
-        var opt = document.createElement('option');
-        opt.value = options[i];
-        opt.textContent = options[i];
-        select.appendChild(opt);
+      
+      loadFilters();
+    })
+    .withFailureHandler(function() {
+      document.getElementById('userRole').innerHTML = 'Staff';
+      document.getElementById('loadingOverlay').style.display = 'none';
+    })
+    .getCurrentUserRole();
+}
+
+function loadFilters() {
+  google.script.run
+    .withSuccessHandler(function(opts) {
+      if (opts && opts.locations) {
+        fillDropdown('filterLocationInput', opts.locations, 'Semua Lokasi');
+        fillDropdown('filterAllLocation', opts.locations, 'Semua Lokasi');
+        fillDropdown('reportLocation', opts.locations, 'Semua Lokasi');
       }
+      if (opts && opts.brands) {
+        fillDropdown('filterAllBrand', opts.brands, 'Semua Brand');
+        fillDropdown('reportBrand', opts.brands, 'Semua Brand');
+      }
+      if (opts && opts.categories) {
+        fillDropdown('filterAllCategory', opts.categories, 'Semua Kategori');
+        fillDropdown('reportCategory', opts.categories, 'Semua Kategori');
+      }
+      loadDashboard();
+    })
+    .withFailureHandler(function() {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    })
+    .getFilterOptions();
+}
+
+function fillDropdown(id, items, defaultText) {
+  var sel = document.getElementById(id);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">' + defaultText + '</option>';
+  if (items) {
+    for (var i = 0; i < items.length; i++) {
+      sel.innerHTML += '<option value="' + items[i] + '">' + items[i] + '</option>';
     }
   }
+}
+
+function loadDashboard() {
+  google.script.run
+    .withSuccessHandler(function(data) {
+      if (data) {
+        document.getElementById('totalItems').innerHTML = data.totalItems || 0;
+        document.getElementById('countedItems').innerHTML = data.countedItems || 0;
+        document.getElementById('matchItems').innerHTML = data.matchItems || 0;
+        document.getElementById('selisihItems').innerHTML = data.selisihItems || 0;
+        
+        var pct = data.percentage || 0;
+        var bar = document.getElementById('progressBar');
+        if (bar) bar.value = pct;
+        var label = document.getElementById('progressBarLabel');
+        if (label) label.innerHTML = pct + '%';
+        
+        showLocationStats(data.locationStats || {});
+        if (isAdmin) showStaffStats(data.staffStats || {});
+      }
+      document.getElementById('loadingOverlay').style.display = 'none';
+    })
+    .withFailureHandler(function() {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    })
+    .getDashboardData();
+}
+
+function showLocationStats(stats) {
+  var el = document.getElementById('locationStats');
+  if (!el) return;
+  el.innerHTML = '';
   
-  // ==================== DASHBOARD ====================
-  function updateDashboard(data) {
-    if (!data) return;
-    
-    document.getElementById('totalItems').textContent = data.totalItems || 0;
-    document.getElementById('countedItems').textContent = data.countedItems || 0;
-    document.getElementById('matchItems').textContent = data.matchItems || 0;
-    document.getElementById('selisihItems').textContent = data.selisihItems || 0;
-    
-    // Progress bar
-    var percentage = data.percentage || 0;
-    var progressBar = document.getElementById('progressBar');
-    if (progressBar) {
-      progressBar.style.width = percentage + '%';
-      progressBar.textContent = percentage + '%';
-    }
-    
-    // Location stats
-    renderLocationStats(data.locationStats || {});
-    
-    // Staff stats (admin only)
-    if (isAdmin) {
-      renderStaffStats(data.staffStats || {});
-    }
+  var keys = Object.keys(stats);
+  if (keys.length === 0) {
+    el.innerHTML = '<p class="text-muted">Belum ada data</p>';
+    return;
   }
   
-  function renderLocationStats(stats) {
-    var container = document.getElementById('locationStats');
-    if (!container) return;
+  keys.sort();
+  for (var i = 0; i < keys.length; i++) {
+    var loc = keys[i];
+    var s = stats[loc];
+    var p = s.total > 0 ? Math.round((s.counted / s.total) * 100) : 0;
+    var cls = p >= 100 ? 'bg-success' : (p >= 50 ? 'bg-info' : 'bg-warning');
     
-    container.innerHTML = '';
+    el.innerHTML += '<div class="location-stat-item">'
+      + '<div class="d-flex justify-content-between align-items-center">'
+      + '<span class="location-name">' + loc + '</span>'
+      + '<span class="text-muted">' + (s.counted || 0) + ' / ' + (s.total || 0) + '</span>'
+      + '</div>'
+      + '<div class="progress"><div class="progress-bar ' + cls + '" style="width:' + p + '%">' + p + '%</div></div>'
+      + '<div class="d-flex gap-3 mt-1">'
+      + '<small class="text-success">Match: ' + (s.match || 0) + '</small>'
+      + '<small class="text-danger">Selisih: ' + (s.selisih || 0) + '</small>'
+      + '</div></div>';
+  }
+}
+
+function showStaffStats(stats) {
+  var el = document.getElementById('staffStats');
+  if (!el) return;
+  el.innerHTML = '';
+  
+  var keys = Object.keys(stats);
+  if (keys.length === 0) {
+    el.innerHTML = '<p class="text-muted">Belum ada data</p>';
+    return;
+  }
+  
+  keys.sort();
+  for (var i = 0; i < keys.length; i++) {
+    var staff = keys[i];
+    var s = stats[staff];
+    var p = s.total > 0 ? Math.round((s.counted / s.total) * 100) : 0;
+    var cls = p >= 100 ? 'bg-success' : (p >= 50 ? 'bg-info' : 'bg-warning');
     
-    var keys = Object.keys(stats);
-    if (keys.length === 0) {
-      container.innerHTML = '<p class="text-muted">Belum ada data</p>';
-      return;
+    el.innerHTML += '<div class="location-stat-item">'
+      + '<div class="d-flex justify-content-between align-items-center">'
+      + '<span class="location-name">' + (staff || 'Unassigned') + '</span>'
+      + '<span class="text-muted">' + (s.counted || 0) + ' / ' + (s.total || 0) + '</span>'
+      + '</div>'
+      + '<div class="progress"><div class="progress-bar ' + cls + '" style="width:' + p + '%">' + p + '%</div></div>'
+      + '</div>';
+  }
+}
+
+function showPage(name) {
+  var pages = document.getElementsByClassName('page-content');
+  for (var i = 0; i < pages.length; i++) {
+    pages[i].style.display = 'none';
+  }
+  var target = document.getElementById('page-' + name);
+  if (target) target.style.display = 'block';
+  
+  if (name === 'dashboard') loadDashboard();
+  else if (name === 'input') loadInputItems();
+  else if (name === 'allItems') loadAllItems();
+  else if (name === 'assignment') loadAssignmentPage();
+  else if (name === 'report') loadReport();
+  else if (name === 'users') loadUsers();
+}
+
+function loadInputItems() {
+  var search = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
+  var loc = document.getElementById('filterLocationInput') ? document.getElementById('filterLocationInput').value : '';
+  var status = document.getElementById('filterStatusInput') ? document.getElementById('filterStatusInput').value : '';
+  
+  var filters = {};
+  if (search) filters.search = search;
+  if (loc) filters.location = loc;
+  if (status) filters.status = status;
+  if (!isAdmin) filters.assignedTo = currentUser;
+  
+  google.script.run
+    .withSuccessHandler(function(items) {
+      allItemsData = items || [];
+      renderItems(allItemsData);
+    })
+    .withFailureHandler(function() {
+      allItemsData = [];
+      renderItems([]);
+    })
+    .getAllItems(filters);
+}
+
+function filterInputItems() {
+  loadInputItems();
+}
+
+function renderItems(items) {
+  var el = document.getElementById('inputItemsList');
+  if (!el) return;
+  
+  if (!items || items.length === 0) {
+    el.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p>Tidak ada item</p></div>';
+    return;
+  }
+  
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var sClass = item.status === 'Match' ? 'status-match' : (item.status === 'Selisih' ? 'status-selisih' : 'status-belum');
+    var bClass = item.status === 'Match' ? 'badge-match' : (item.status === 'Selisih' ? 'badge-selisih' : 'badge-belum');
+    
+    html += '<div class="item-card ' + sClass + '" onclick="openModal(' + item.id + ')">';
+    html += '<div class="d-flex justify-content-between">';
+    html += '<div><div class="product-name">' + item.productName + '</div>';
+    html += '<div class="product-sku">' + item.internalRef + ' | ' + item.brand + '</div></div>';
+    html += '<span class="badge ' + bClass + '">' + item.status + '</span></div>';
+    html += '<div class="qty-info"><span class="qty-badge qty-system">System: ' + item.qtySystem + '</span>';
+    if (item.qtyFisik !== '') html += '<span class="qty-badge qty-fisik">Fisik: ' + item.qtyFisik + '</span>';
+    if (item.selisih !== '') html += '<span class="qty-badge qty-selisih">Selisih: ' + item.selisih + '</span>';
+    html += '</div></div>';
+  }
+  
+  el.innerHTML = html;
+}
+
+function openModal(id) {
+  var item = null;
+  for (var i = 0; i < allItemsData.length; i++) {
+    if (allItemsData[i].id == id) {
+      item = allItemsData[i];
+      break;
     }
-    
-    keys.sort();
-    for (var i = 0; i < keys.length; i++) {
-      var location = keys[i];
-      var stat = stats[location];
-      var pct = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
-      var barClass = pct >= 100 ? 'bg-success' : (pct >= 50 ? 'bg-info' : 'bg-warning');
+  }
+  if (!item) return;
+  
+  document.getElementById('modalItemId').value = item.id;
+  document.getElementById('modalProductName').innerHTML = item.productName;
+  document.getElementById('modalSKU').innerHTML = item.internalRef;
+  document.getElementById('modalQtySystem').innerHTML = item.qtySystem;
+  document.getElementById('modalQtyFisik').value = item.qtyFisik || '';
+  document.getElementById('modalKeterangan').value = '';
+  document.getElementById('modalKeteranganText').value = '';
+  
+  new bootstrap.Modal(document.getElementById('inputModal')).show();
+}
+
+function submitItemCount() {
+  var itemId = document.getElementById('modalItemId').value;
+  var qty = parseInt(document.getElementById('modalQtyFisik').value);
+  var ket1 = document.getElementById('modalKeterangan').value;
+  var ket2 = document.getElementById('modalKeteranganText').value;
+  var keterangan = ket1 + (ket2 ? ' - ' + ket2 : '');
+  
+  if (isNaN(qty) || qty < 0) {
+    alert('Qty harus angka >= 0');
+    return;
+  }
+  
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('loadingOverlay').style.display = 'none';
       
-      container.innerHTML += 
-        '<div class="location-stat-item">' +
-          '<div class="d-flex justify-content-between align-items-center">' +
-            '<span class="location-name">' + location + '</span>' +
-            '<span class="text-muted">' + (stat.counted || 0) + ' / ' + (stat.total || 0) + ' item</span>' +
-          '</div>' +
-          '<div class="progress">' +
-            '<div class="progress-bar ' + barClass + '" role="progressbar" style="width: ' + pct + '%">' + pct + '%</div>' +
-          '</div>' +
-          '<div class="d-flex gap-3 mt-1">' +
-            '<small class="text-success"><i class="bi bi-check-circle"></i> Match: ' + (stat.match || 0) + '</small>' +
-            '<small class="text-danger"><i class="bi bi-exclamation-circle"></i> Selisih: ' + (stat.selisih || 0) + '</small>' +
-          '</div>' +
-        '</div>';
-    }
-  }
-  
-  function renderStaffStats(stats) {
-    var container = document.getElementById('staffStats');
-    if (!container) return;
-    
-    container.innerHTML = '';
-    
-    var keys = Object.keys(stats);
-    if (keys.length === 0) {
-      container.innerHTML = '<p class="text-muted">Belum ada data staff</p>';
-      return;
-    }
-    
-    keys.sort();
-    for (var i = 0; i < keys.length; i++) {
-      var staff = keys[i];
-      var stat = stats[staff];
-      var pct = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
-      var barClass = pct >= 100 ? 'bg-success' : (pct >= 50 ? 'bg-info' : 'bg-warning');
+      if (result && result.error) {
+        alert('Error: ' + result.error);
+        return;
+      }
       
-      container.innerHTML += 
-        '<div class="location-stat-item">' +
-          '<div class="d-flex justify-content-between align-items-center">' +
-            '<span class="location-name">' + (staff || 'Unassigned') + '</span>' +
-            '<span class="text-muted">' + (stat.counted || 0) + ' / ' + (stat.total || 0) + ' item</span>' +
-          '</div>' +
-          '<div class="progress">' +
-            '<div class="progress-bar ' + barClass + '" role="progressbar" style="width: ' + pct + '%">' + pct + '%</div>' +
-          '</div>' +
-        '</div>';
-    }
-  }
-  
-  // ==================== PAGE NAVIGATION ====================
-  function showPage(pageName) {
-    // Hide all pages
-    var pages = document.getElementsByClassName('page-content');
-    for (var i = 0; i < pages.length; i++) {
-      pages[i].style.display = 'none';
-    }
-    
-    // Show selected page
-    var target = document.getElementById('page-' + pageName);
-    if (target) {
-      target.style.display = 'block';
-    }
-    
-    // Load page data
-    if (pageName === 'dashboard') {
-      google.script.run.withSuccessHandler(updateDashboard).getDashboardData();
-    } else if (pageName === 'input') {
+      var modalEl = document.getElementById('inputModal');
+      var modal = bootstrap.Modal.getInstance(modalEl);
+      if (modal) modal.hide();
+      
       loadInputItems();
-    } else if (pageName === 'allItems') {
-      loadAllItems();
-    } else if (pageName === 'assignment') {
-      loadAssignmentPage();
-    } else if (pageName === 'report') {
-      loadReport();
-    } else if (pageName === 'users') {
-      loadUsers();
-    }
+      alert('Berhasil! Selisih: ' + result.selisih);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      alert('Error: ' + err.message);
+    })
+    .submitCount(parseInt(itemId), qty, keterangan);
+}
+
+function loadAllItems() {
+  var loc = document.getElementById('filterAllLocation') ? document.getElementById('filterAllLocation').value : '';
+  var brand = document.getElementById('filterAllBrand') ? document.getElementById('filterAllBrand').value : '';
+  var cat = document.getElementById('filterAllCategory') ? document.getElementById('filterAllCategory').value : '';
+  var status = document.getElementById('filterAllStatus') ? document.getElementById('filterAllStatus').value : '';
+  var search = document.getElementById('searchAll') ? document.getElementById('searchAll').value : '';
+  
+  var filters = {};
+  if (loc) filters.location = loc;
+  if (brand) filters.brand = brand;
+  if (cat) filters.category = cat;
+  if (status) filters.status = status;
+  if (search) filters.search = search;
+  
+  google.script.run
+    .withSuccessHandler(function(items) {
+      allItemsData = items || [];
+      renderAllTable(allItemsData);
+    })
+    .withFailureHandler(function() {
+      allItemsData = [];
+      renderAllTable([]);
+    })
+    .getAllItems(filters);
+}
+
+function renderAllTable(items) {
+  var tbody = document.getElementById('allItemsBody');
+  if (!tbody) return;
+  
+  if (!items || items.length === 0) {
+    tbody.innerHTML = '<tr><td colspan="11" class="text-center">Tidak ada data</td></tr>';
+    return;
   }
   
-  // ==================== INPUT STOK ====================
-  function loadInputItems() {
-    var search = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
-    var location = document.getElementById('filterLocationInput') ? document.getElementById('filterLocationInput').value : '';
-    var status = document.getElementById('filterStatusInput') ? document.getElementById('filterStatusInput').value : '';
+  var html = '';
+  for (var i = 0; i < items.length; i++) {
+    var item = items[i];
+    var rowCls = item.status === 'Selisih' ? 'table-selisih' : (item.status === 'Match' ? 'table-match' : '');
+    var bCls = item.status === 'Match' ? 'badge-match' : (item.status === 'Selisih' ? 'badge-selisih' : 'badge-belum');
     
-    var filters = {};
-    if (search) filters.search = search;
-    if (location) filters.location = location;
-    if (status) filters.status = status;
-    if (!isAdmin) filters.assignedTo = currentUser;
-    
-    google.script.run
-      .withSuccessHandler(function(items) {
-        allItemsData = items || [];
-        renderInputItems(allItemsData);
-      })
-      .withFailureHandler(function() {
-        allItemsData = [];
-        renderInputItems([]);
-      })
-      .getAllItems(filters);
+    html += '<tr class="' + rowCls + '">';
+    html += '<td>' + item.id + '</td>';
+    html += '<td>' + item.location + '</td>';
+    html += '<td>' + (item.productName.length > 30 ? item.productName.substring(0, 30) + '...' : item.productName) + '</td>';
+    html += '<td>' + item.internalRef + '</td>';
+    html += '<td>' + item.brand + '</td>';
+    html += '<td>' + item.qtySystem + '</td>';
+    html += '<td>' + (item.qtyFisik !== '' ? item.qtyFisik : '-') + '</td>';
+    html += '<td>' + (item.selisih !== '' ? item.selisih : '-') + '</td>';
+    html += '<td><span class="badge ' + bCls + '">' + item.status + '</span></td>';
+    html += '<td>' + (item.assignedTo ? item.assignedTo.substring(0, 15) : '') + '</td>';
+    html += '<td><button class="btn btn-sm btn-primary" type="button" aria-label="Edit" onclick="openModal(' + item.id + ')"><i class="bi bi-pencil"></i></button></td>';
+    html += '</tr>';
   }
   
-  function filterInputItems() {
-    loadInputItems();
-  }
+  tbody.innerHTML = html;
+}
+
+function exportCurrentView() {
+  var loc = document.getElementById('filterAllLocation') ? document.getElementById('filterAllLocation').value : '';
+  var brand = document.getElementById('filterAllBrand') ? document.getElementById('filterAllBrand').value : '';
+  var cat = document.getElementById('filterAllCategory') ? document.getElementById('filterAllCategory').value : '';
+  var status = document.getElementById('filterAllStatus') ? document.getElementById('filterAllStatus').value : '';
   
-  function renderInputItems(items) {
-    var container = document.getElementById('inputItemsList');
-    if (!container) return;
-    
-    if (!items || items.length === 0) {
-      container.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p class="mt-2">Tidak ada item ditemukan</p></div>';
-      return;
-    }
-    
-    var html = '';
-    for (var i = 0; i < items.length; i++) {
-      var item = items[i];
-      var statusClass = item.status === 'Match' ? 'status-match' : (item.status === 'Selisih' ? 'status-selisih' : 'status-belum');
-      var badgeClass = item.status === 'Match' ? 'badge-match' : (item.status === 'Selisih' ? 'badge-selisih' : 'badge-belum');
-      
-      html += '<div class="item-card ' + statusClass + '" onclick="openInputModal(' + item.id + ')">';
-      html += '<div class="d-flex justify-content-between align-items-start">';
-      html += '<div>';
-      html += '<div class="product-name">' + escapeHtml(item.productName) + '</div>';
-      html += '<div class="product-sku">' + escapeHtml(item.internalRef) + ' | ' + escapeHtml(item.brand) + ' | ' + escapeHtml(item.location) + '</div>';
-      html += '</div>';
-      html += '<span class="badge ' + badgeClass + '">' + item.status + '</span>';
-      html += '</div>';
-      html += '<div class="qty-info">';
-      html += '<span class="qty-badge qty-system">System: ' + item.qtySystem + '</span>';
-      if (item.qtyFisik !== '') {
-        html += '<span class="qty-badge qty-fisik">Fisik: ' + item.qtyFisik + '</span>';
-      }
-      if (item.selisih !== '') {
-        html += '<span class="qty-badge qty-selisih">Selisih: ' + item.selisih + '</span>';
-      }
-      html += '</div>';
-      html += '</div>';
-    }
-    
-    container.innerHTML = html;
-  }
+  var filters = {};
+  if (loc) filters.location = loc;
+  if (brand) filters.brand = brand;
+  if (cat) filters.category = cat;
+  if (status) filters.status = status;
   
-  // ==================== INPUT MODAL ====================
-  function openInputModal(itemId) {
-    var item = null;
-    for (var i = 0; i < allItemsData.length; i++) {
-      if (allItemsData[i].id == itemId) {
-        item = allItemsData[i];
-        break;
-      }
-    }
-    if (!item) return;
-    
-    document.getElementById('modalItemId').value = item.id;
-    document.getElementById('modalProductName').textContent = item.productName;
-    document.getElementById('modalSKU').textContent = item.internalRef;
-    document.getElementById('modalQtySystem').textContent = item.qtySystem;
-    document.getElementById('modalQtyFisik').value = item.qtyFisik || '';
-    document.getElementById('modalKeterangan').value = '';
-    document.getElementById('modalKeteranganText').value = '';
-    
-    var modal = new bootstrap.Modal(document.getElementById('inputModal'));
-    modal.show();
-  }
+  document.getElementById('loadingOverlay').style.display = 'flex';
   
-  function submitItemCount() {
-    var itemId = document.getElementById('modalItemId').value;
-    var qtyFisik = parseInt(document.getElementById('modalQtyFisik').value);
-    var keteranganSelect = document.getElementById('modalKeterangan').value;
-    var keteranganText = document.getElementById('modalKeteranganText').value;
-    var keterangan = keteranganSelect;
-    if (keteranganText) {
-      keterangan = keterangan + ' - ' + keteranganText;
-    }
-    
-    if (isNaN(qtyFisik) || qtyFisik < 0) {
-      alert('Qty Fisik harus berupa angka >= 0');
-      return;
-    }
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        
-        if (result && result.error) {
-          alert('Error: ' + result.error);
-          return;
-        }
-        
-        // Close modal
-        var modalEl = document.getElementById('inputModal');
-        var modal = bootstrap.Modal.getInstance(modalEl);
-        if (modal) modal.hide();
-        
-        // Reload
-        loadInputItems();
-        showToast('Berhasil', 'Qty Fisik berhasil disimpan. Selisih: ' + result.selisih, 'success');
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .submitCount(parseInt(itemId), qtyFisik, keterangan);
-  }
-  
-  // ==================== ALL ITEMS ====================
-  function loadAllItems() {
-    var location = document.getElementById('filterAllLocation') ? document.getElementById('filterAllLocation').value : '';
-    var brand = document.getElementById('filterAllBrand') ? document.getElementById('filterAllBrand').value : '';
-    var category = document.getElementById('filterAllCategory') ? document.getElementById('filterAllCategory').value : '';
-    var status = document.getElementById('filterAllStatus') ? document.getElementById('filterAllStatus').value : '';
-    var search = document.getElementById('searchAll') ? document.getElementById('searchAll').value : '';
-    
-    var filters = {};
-    if (location) filters.location = location;
-    if (brand) filters.brand = brand;
-    if (category) filters.category = category;
-    if (status) filters.status = status;
-    if (search) filters.search = search;
-    
-    google.script.run
-      .withSuccessHandler(function(items) {
-        allItemsData = items || [];
-        renderAllItemsTable(allItemsData);
-      })
-      .withFailureHandler(function() {
-        allItemsData = [];
-        renderAllItemsTable([]);
-      })
-      .getAllItems(filters);
-  }
-  
-  function renderAllItemsTable(items) {
-    var tbody = document.getElementById('allItemsBody');
-    if (!tbody) return;
-    
-    if (!items || items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">Tidak ada data</td></tr>';
-      return;
-    }
-    
-    var html = '';
-    for (var i = 0; i < items.length; i++) {
-      var item = items[i];
-      var rowClass = item.status === 'Selisih' ? 'table-selisih' : (item.status === 'Match' ? 'table-match' : '');
-      var badgeClass = item.status === 'Match' ? 'badge-match' : (item.status === 'Selisih' ? 'badge-selisih' : 'badge-belum');
-      
-      html += '<tr class="' + rowClass + '">';
-      html += '<td>' + item.id + '</td>';
-      html += '<td>' + escapeHtml(item.location) + '</td>';
-      html += '<td title="' + escapeHtml(item.productName) + '">' + truncate(item.productName, 35) + '</td>';
-      html += '<td>' + escapeHtml(item.internalRef) + '</td>';
-      html += '<td>' + escapeHtml(item.brand) + '</td>';
-      html += '<td>' + item.qtySystem + '</td>';
-      html += '<td>' + (item.qtyFisik !== '' ? item.qtyFisik : '-') + '</td>';
-      html += '<td>' + (item.selisih !== '' ? item.selisih : '-') + '</td>';
-      html += '<td><span class="badge ' + badgeClass + '">' + item.status + '</span></td>';
-      html += '<td>' + truncate(item.assignedTo, 15) + '</td>';
-      html += '<td><button class="btn btn-sm btn-primary" onclick="openInputModal(' + item.id + ')"><i class="bi bi-pencil"></i></button></td>';
-      html += '</tr>';
-    }
-    
-    tbody.innerHTML = html;
-  }
-  
-  function exportCurrentView() {
-    var location = document.getElementById('filterAllLocation') ? document.getElementById('filterAllLocation').value : '';
-    var brand = document.getElementById('filterAllBrand') ? document.getElementById('filterAllBrand').value : '';
-    var category = document.getElementById('filterAllCategory') ? document.getElementById('filterAllCategory').value : '';
-    var status = document.getElementById('filterAllStatus') ? document.getElementById('filterAllStatus').value : '';
-    
-    var filters = {};
-    if (location) filters.location = location;
-    if (brand) filters.brand = brand;
-    if (category) filters.category = category;
-    if (status) filters.status = status;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(csv) {
-        showLoading(false);
-        downloadCSV(csv, 'stock-opname-export.csv');
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .exportToCSV(filters);
-  }
-  
-  function downloadCSV(csv, filename) {
-    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    var link = document.createElement('a');
-    link.href = URL.createObjectURL(blob);
-    link.download = filename;
-    link.click();
-  }
-  
-  // ==================== ASSIGNMENT PAGE ====================
-  function loadAssignmentPage() {
-    // Load staff list
-    google.script.run
-      .withSuccessHandler(function(users) {
-        var staffSelect = document.getElementById('assignStaff');
-        if (staffSelect) {
-          staffSelect.innerHTML = '<option value="">-- Pilih Staff --</option>';
-          if (users) {
-            for (var i = 0; i < users.length; i++) {
-              if (users[i].role === 'Staff' && users[i].status === 'Active') {
-                var opt = document.createElement('option');
-                opt.value = users[i].email;
-                opt.textContent = users[i].name + ' (' + users[i].email + ')';
-                staffSelect.appendChild(opt);
-              }
+  google.script.run
+    .withSuccessHandler(function(csv) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      var blob = new Blob([csv], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'stock-opname.csv';
+      a.click();
+    })
+    .withFailureHandler(function() {
+      document.getElementById('loadingOverlay').style.display = 'none';
+    })
+    .exportToCSV(filters);
+}
+
+function loadAssignmentPage() {
+  google.script.run
+    .withSuccessHandler(function(users) {
+      var sel = document.getElementById('assignStaff');
+      if (sel) {
+        sel.innerHTML = '<option value="">-- Pilih Staff --</option>';
+        if (users) {
+          for (var i = 0; i < users.length; i++) {
+            if (users[i].role === 'Staff' && users[i].status === 'Active') {
+              sel.innerHTML += '<option value="' + users[i].email + '">' + users[i].name + '</option>';
             }
           }
         }
-      })
-      .getUsers();
-    
-    updateFilterOptions();
-    loadAssignments();
-  }
-  
-  function updateFilterOptions() {
-    var filterType = document.getElementById('assignFilterType') ? document.getElementById('assignFilterType').value : 'Location';
-    var filterValueSelect = document.getElementById('assignFilterValue');
-    if (!filterValueSelect) return;
-    
-    filterValueSelect.innerHTML = '';
-    
-    var options = [];
-    if (filterType === 'Location') {
-      options = filterOptions.locations || [];
-    } else if (filterType === 'Brand') {
-      options = filterOptions.brands || [];
-    } else if (filterType === 'Category') {
-      options = filterOptions.categories || [];
-    } else if (filterType === 'All') {
-      options = ['all'];
-    }
-    
-    for (var i = 0; i < options.length; i++) {
-      var opt = document.createElement('option');
-      opt.value = options[i];
-      opt.textContent = options[i];
-      filterValueSelect.appendChild(opt);
-    }
-  }
-  
-  function loadAssignments() {
-    google.script.run
-      .withSuccessHandler(renderAssignments)
-      .getAssignments();
-  }
-  
-  function renderAssignments(assignments) {
-    var container = document.getElementById('assignmentsList');
-    if (!container) return;
-    
-    if (!assignments || assignments.length === 0) {
-      container.innerHTML = '<p class="text-muted">Belum ada assignment</p>';
-      return;
-    }
-    
-    var html = '';
-    for (var i = 0; i < assignments.length; i++) {
-      var a = assignments[i];
-      if (a.status !== 'Active') continue;
-      
-      html += '<div class="assignment-card">';
-      html += '<div class="d-flex justify-content-between align-items-start">';
-      html += '<div>';
-      html += '<div class="user-email">' + escapeHtml(a.userEmail) + '</div>';
-      html += '<div class="filter-info"><i class="bi bi-funnel"></i> ' + escapeHtml(a.filterType) + ': ' + escapeHtml(a.filterValue) + '</div>';
-      html += '</div>';
-      html += '<button class="btn btn-sm btn-danger" onclick="removeAssignment(\'' + a.id + '\')"><i class="bi bi-trash"></i></button>';
-      html += '</div>';
-      html += '</div>';
-    }
-    
-    container.innerHTML = html || '<p class="text-muted">Belum ada assignment aktif</p>';
-  }
-  
-  function createAssignment() {
-    var userEmail = document.getElementById('assignStaff') ? document.getElementById('assignStaff').value : '';
-    var filterType = document.getElementById('assignFilterType') ? document.getElementById('assignFilterType').value : '';
-    var filterValue = document.getElementById('assignFilterValue') ? document.getElementById('assignFilterValue').value : '';
-    
-    if (!userEmail) {
-      alert('Pilih staff terlebih dahulu');
-      return;
-    }
-    
-    if (!filterValue) {
-      alert('Pilih filter value');
-      return;
-    }
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        
-        if (result && result.error) {
-          alert('Error: ' + result.error);
-          return;
-        }
-        
-        showToast('Berhasil', result.assignedCount + ' item berhasil di-assign ke ' + userEmail, 'success');
-        loadAssignments();
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .assignItems(userEmail, filterType, filterValue);
-  }
-  
-  function removeAssignment(assignmentId) {
-    if (!confirm('Hapus assignment ini?')) return;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        
-        if (result && result.error) {
-          alert('Error: ' + result.error);
-          return;
-        }
-        
-        showToast('Berhasil', 'Assignment berhasil dihapus', 'success');
-        loadAssignments();
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .removeAssignment(assignmentId);
-  }
-  
-  // ==================== REPORT PAGE ====================
-  function loadReport() {
-    var location = document.getElementById('reportLocation') ? document.getElementById('reportLocation').value : '';
-    var brand = document.getElementById('reportBrand') ? document.getElementById('reportBrand').value : '';
-    var category = document.getElementById('reportCategory') ? document.getElementById('reportCategory').value : '';
-    var status = document.getElementById('reportStatus') ? document.getElementById('reportStatus').value : '';
-    
-    var filters = {};
-    if (location) filters.location = location;
-    if (brand) filters.brand = brand;
-    if (category) filters.category = category;
-    if (status) filters.status = status;
-    
-    google.script.run
-      .withSuccessHandler(renderReport)
-      .getReconciliationReport(filters);
-  }
-  
-  function renderReport(report) {
-    if (!report) return;
-    
-    document.getElementById('reportTotalSystem').textContent = report.totalQtySystem || 0;
-    document.getElementById('reportTotalFisik').textContent = report.totalQtyFisik || 0;
-    document.getElementById('reportTotalSelisih').textContent = report.totalSelisih || 0;
-    
-    var tbody = document.getElementById('reportBody');
-    if (!tbody) return;
-    
-    var items = report.items || [];
-    
-    if (items.length === 0) {
-      tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">Tidak ada data yang sudah dihitung</td></tr>';
-      return;
-    }
-    
-    var html = '';
-    var matchCount = 0;
-    for (var i = 0; i < items.length; i++) {
-      var item = items[i];
-      var rowClass = item.selisih !== 0 ? 'table-selisih' : 'table-match';
-      if (item.selisih === 0) matchCount++;
-      
-      html += '<tr class="' + rowClass + '">';
-      html += '<td>' + item.id + '</td>';
-      html += '<td>' + escapeHtml(item.location) + '</td>';
-      html += '<td>' + truncate(item.productName, 35) + '</td>';
-      html += '<td>' + escapeHtml(item.internalRef) + '</td>';
-      html += '<td>' + escapeHtml(item.brand) + '</td>';
-      html += '<td>' + item.qtySystem + '</td>';
-      html += '<td>' + item.qtyFisik + '</td>';
-      html += '<td class="' + (item.selisih !== 0 ? 'text-danger fw-bold' : '') + '">' + item.selisih + '</td>';
-      html += '<td>' + escapeHtml(item.keterangan || '-') + '</td>';
-      html += '<td>' + escapeHtml(item.inputter || '-') + '</td>';
-      html += '</tr>';
-    }
-    
-    tbody.innerHTML = html;
-    
-    // Update match count if element exists
-    var matchCountEl = document.getElementById('reportMatchCount');
-    if (matchCountEl) matchCountEl.textContent = matchCount;
-  }
-  
-  function exportReport() {
-    var location = document.getElementById('reportLocation') ? document.getElementById('reportLocation').value : '';
-    var brand = document.getElementById('reportBrand') ? document.getElementById('reportBrand').value : '';
-    var category = document.getElementById('reportCategory') ? document.getElementById('reportCategory').value : '';
-    var status = document.getElementById('reportStatus') ? document.getElementById('reportStatus').value : '';
-    
-    var filters = {};
-    if (location) filters.location = location;
-    if (brand) filters.brand = brand;
-    if (category) filters.category = category;
-    if (status) filters.status = status;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(csv) {
-        showLoading(false);
-        downloadCSV(csv, 'stock-opname-report.csv');
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .exportToCSV(filters);
-  }
-  
-  // ==================== USERS PAGE ====================
-  function loadUsers() {
-    google.script.run
-      .withSuccessHandler(renderUsers)
-      .getUsers();
-  }
-  
-  function renderUsers(users) {
-    var container = document.getElementById('usersList');
-    if (!container) return;
-    
-    if (!users || users.length === 0) {
-      container.innerHTML = '<p class="text-muted">Belum ada user</p>';
-      return;
-    }
-    
-    var html = '';
-    for (var i = 0; i < users.length; i++) {
-      var user = users[i];
-      var statusBadge = user.status === 'Active' ? 'bg-success' : 'bg-secondary';
-      
-      html += '<div class="user-card">';
-      html += '<div class="user-info">';
-      html += '<div class="user-name">' + escapeHtml(user.name) + '</div>';
-      html += '<div class="user-email">' + escapeHtml(user.email) + '</div>';
-      html += '<div><span class="badge bg-primary">' + user.role + '</span> <span class="badge ' + statusBadge + '">' + user.status + '</span></div>';
-      html += '</div>';
-      html += '<div class="user-actions">';
-      if (user.status === 'Active') {
-        html += '<button class="btn btn-sm btn-warning" onclick="toggleUserStatus(\'' + escapeHtml(user.email) + '\', \'Inactive\')">Nonaktifkan</button>';
-      } else {
-        html += '<button class="btn btn-sm btn-success" onclick="toggleUserStatus(\'' + escapeHtml(user.email) + '\', \'Active\')">Aktifkan</button>';
       }
-      html += '</div>';
-      html += '</div>';
-    }
-    
-    container.innerHTML = html;
-  }
+    })
+    .getUsers();
   
-  function addNewUser() {
-    var email = document.getElementById('newUserEmail') ? document.getElementById('newUserEmail').value : '';
-    var name = document.getElementById('newUserName') ? document.getElementById('newUserName').value : '';
-    var role = document.getElementById('newUserRole') ? document.getElementById('newUserRole').value : 'Staff';
-    
-    if (!email || !name) {
-      alert('Email dan Nama harus diisi');
-      return;
-    }
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
+  updateAssignFilter();
+  loadAssignments();
+}
+
+function updateAssignFilter() {
+  var type = document.getElementById('assignFilterType') ? document.getElementById('assignFilterType').value : 'Location';
+  var sel = document.getElementById('assignFilterValue');
+  if (!sel) return;
+  
+  sel.innerHTML = '';
+  google.script.run
+    .withSuccessHandler(function(opts) {
+      var items = [];
+      if (type === 'Location') items = opts.locations || [];
+      else if (type === 'Brand') items = opts.brands || [];
+      else if (type === 'Category') items = opts.categories || [];
+      else items = ['all'];
+      
+      for (var i = 0; i < items.length; i++) {
+        sel.innerHTML += '<option value="' + items[i] + '">' + items[i] + '</option>';
+      }
+    })
+    .getFilterOptions();
+}
+
+function loadAssignments() {
+  google.script.run
+    .withSuccessHandler(function(list) {
+      var el = document.getElementById('assignmentsList');
+      if (!el) return;
+      
+      if (!list || list.length === 0) {
+        el.innerHTML = '<p class="text-muted">Belum ada assignment</p>';
+        return;
+      }
+      
+      var html = '';
+      for (var i = 0; i < list.length; i++) {
+        var a = list[i];
+        if (a.status !== 'Active') continue;
+        html += '<div class="assignment-card">';
+        html += '<div class="d-flex justify-content-between">';
+        html += '<div><strong>' + a.userEmail + '</strong><br>';
+        html += '<small>' + a.filterType + ': ' + a.filterValue + '</small></div>';
+        html += '<button class="btn btn-sm btn-danger" type="button" aria-label="Hapus assignment" onclick="removeAssign(\'' + a.id + '\')"><i class="bi bi-trash"></i></button>';
+        html += '</div></div>';
+      }
+      
+      el.innerHTML = html || '<p class="text-muted">Belum ada assignment aktif</p>';
+    })
+    .getAssignments();
+}
+
+function createAssignment() {
+  var email = document.getElementById('assignStaff') ? document.getElementById('assignStaff').value : '';
+  var type = document.getElementById('assignFilterType') ? document.getElementById('assignFilterType').value : '';
+  var value = document.getElementById('assignFilterValue') ? document.getElementById('assignFilterValue').value : '';
+  
+  if (!email) { alert('Pilih staff'); return; }
+  if (!value) { alert('Pilih value'); return; }
+  
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      if (result && result.error) {
+        alert('Error: ' + result.error);
+      } else {
+        alert('Berhasil! ' + result.assignedCount + ' item di-assign');
+        loadAssignments();
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      alert('Error: ' + err.message);
+    })
+    .assignItems(email, type, value);
+}
+
+function removeAssign(id) {
+  if (!confirm('Hapus assignment?')) return;
+  
+  google.script.run
+    .withSuccessHandler(function() {
+      alert('Berhasil dihapus');
+      loadAssignments();
+    })
+    .removeAssignment(id);
+}
+
+function loadReport() {
+  var loc = document.getElementById('reportLocation') ? document.getElementById('reportLocation').value : '';
+  var brand = document.getElementById('reportBrand') ? document.getElementById('reportBrand').value : '';
+  var cat = document.getElementById('reportCategory') ? document.getElementById('reportCategory').value : '';
+  var status = document.getElementById('reportStatus') ? document.getElementById('reportStatus').value : '';
+  
+  var filters = {};
+  if (loc) filters.location = loc;
+  if (brand) filters.brand = brand;
+  if (cat) filters.category = cat;
+  if (status) filters.status = status;
+  
+  google.script.run
+    .withSuccessHandler(function(report) {
+      if (!report) return;
+      
+      document.getElementById('reportTotalSystem').innerHTML = report.totalQtySystem || 0;
+      document.getElementById('reportTotalFisik').innerHTML = report.totalQtyFisik || 0;
+      document.getElementById('reportTotalSelisih').innerHTML = report.totalSelisih || 0;
+      
+      var tbody = document.getElementById('reportBody');
+      if (!tbody) return;
+      
+      var items = report.items || [];
+      if (items.length === 0) {
+        tbody.innerHTML = '<tr><td colspan="10" class="text-center">Belum ada data</td></tr>';
+        return;
+      }
+      
+      var html = '';
+      var matchCount = 0;
+      for (var i = 0; i < items.length; i++) {
+        var item = items[i];
+        var rowCls = item.selisih !== 0 ? 'table-selisih' : 'table-match';
+        if (item.selisih === 0) matchCount++;
         
-        if (result && result.error) {
-          alert('Error: ' + result.error);
-          return;
+        html += '<tr class="' + rowCls + '">';
+        html += '<td>' + item.id + '</td>';
+        html += '<td>' + item.location + '</td>';
+        html += '<td>' + (item.productName.length > 30 ? item.productName.substring(0, 30) + '...' : item.productName) + '</td>';
+        html += '<td>' + item.internalRef + '</td>';
+        html += '<td>' + item.brand + '</td>';
+        html += '<td>' + item.qtySystem + '</td>';
+        html += '<td>' + item.qtyFisik + '</td>';
+        html += '<td>' + item.selisih + '</td>';
+        html += '<td>' + (item.keterangan || '-') + '</td>';
+        html += '<td>' + (item.inputter || '-') + '</td>';
+        html += '</tr>';
+      }
+      
+      tbody.innerHTML = html;
+      
+      var matchEl = document.getElementById('reportMatchCount');
+      if (matchEl) matchEl.innerHTML = matchCount;
+    })
+    .getReconciliationReport(filters);
+}
+
+function exportReport() {
+  var loc = document.getElementById('reportLocation') ? document.getElementById('reportLocation').value : '';
+  var brand = document.getElementById('reportBrand') ? document.getElementById('reportBrand').value : '';
+  var cat = document.getElementById('reportCategory') ? document.getElementById('reportCategory').value : '';
+  var status = document.getElementById('reportStatus') ? document.getElementById('reportStatus').value : '';
+  
+  var filters = {};
+  if (loc) filters.location = loc;
+  if (brand) filters.brand = brand;
+  if (cat) filters.category = cat;
+  if (status) filters.status = status;
+  
+  google.script.run
+    .withSuccessHandler(function(csv) {
+      var blob = new Blob([csv], { type: 'text/csv' });
+      var a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = 'laporan-stock-opname.csv';
+      a.click();
+    })
+    .exportToCSV(filters);
+}
+
+function loadUsers() {
+  google.script.run
+    .withSuccessHandler(function(users) {
+      var el = document.getElementById('usersList');
+      if (!el) return;
+      
+      if (!users || users.length === 0) {
+        el.innerHTML = '<p class="text-muted">Belum ada user</p>';
+        return;
+      }
+      
+      var html = '';
+      for (var i = 0; i < users.length; i++) {
+        var u = users[i];
+        var badge = u.status === 'Active' ? 'bg-success' : 'bg-secondary';
+        
+        html += '<div class="user-card">';
+        html += '<div class="user-info">';
+        html += '<div class="user-name">' + u.name + '</div>';
+        html += '<div class="user-email">' + u.email + '</div>';
+        html += '<span class="badge bg-primary">' + u.role + '</span> ';
+        html += '<span class="badge ' + badge + '">' + u.status + '</span>';
+        html += '</div>';
+        html += '<div>';
+        if (u.status === 'Active') {
+          html += '<button class="btn btn-sm btn-warning" type="button" onclick="toggleUser(\'' + u.email + '\',\'Inactive\')">Nonaktifkan</button>';
+        } else {
+          html += '<button class="btn btn-sm btn-success" type="button" onclick="toggleUser(\'' + u.email + '\',\'Active\')">Aktifkan</button>';
         }
-        
-        showToast('Berhasil', 'User ' + email + ' berhasil ditambahkan', 'success');
-        
+        html += '</div></div>';
+      }
+      
+      el.innerHTML = html;
+    })
+    .getUsers();
+}
+
+function addNewUser() {
+  var email = document.getElementById('newUserEmail') ? document.getElementById('newUserEmail').value : '';
+  var name = document.getElementById('newUserName') ? document.getElementById('newUserName').value : '';
+  var role = document.getElementById('newUserRole') ? document.getElementById('newUserRole').value : 'Staff';
+  
+  if (!email || !name) { alert('Email dan Nama harus diisi'); return; }
+  
+  document.getElementById('loadingOverlay').style.display = 'flex';
+  
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      if (result && result.error) {
+        alert('Error: ' + result.error);
+      } else {
+        alert('User berhasil ditambahkan!');
         document.getElementById('newUserEmail').value = '';
         document.getElementById('newUserName').value = '';
-        
         loadUsers();
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .addUser(email, name, role);
-  }
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      alert('Error: ' + err.message);
+    })
+    .addUser(email, name, role);
+}
+
+function toggleUser(email, status) {
+  var action = status === 'Active' ? 'mengaktifkan' : 'menonaktifkan';
+  if (!confirm('Yakin ' + action + ' user ' + email + '?')) return;
   
-  function toggleUserStatus(email, newStatus) {
-    var action = newStatus === 'Active' ? 'mengaktifkan' : 'menonaktifkan';
-    if (!confirm('Yakin ingin ' + action + ' user ' + email + '?')) return;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        
-        if (result && result.error) {
-          alert('Error: ' + result.error);
-          return;
-        }
-        
-        showToast('Berhasil', 'Status user ' + email + ' berhasil diubah', 'success');
-        loadUsers();
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .updateUserStatus(email, newStatus);
-  }
+  google.script.run
+    .withSuccessHandler(function() {
+      alert('Berhasil!');
+      loadUsers();
+    })
+    .updateUserStatus(email, status);
+}
+
+function parseCSV() {
+  if (!confirm('Parse CSV dari sheet Import?')) return;
   
-  // ==================== IMPORT CSV ====================
-  function parseCSV() {
-    if (!confirm('Parse CSV dari sheet Import? Data yang ada di sheet Data akan di-overwrite.')) return;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        
-        var resultDiv = document.getElementById('importResult');
-        
-        if (result && result.error) {
-          resultDiv.innerHTML = '<div class="alert alert-danger">' + result.error + '</div>';
-          return;
-        }
-        
-        resultDiv.innerHTML = '<div class="alert alert-success">Berhasil! ' + result.count + ' item berhasil di-import.</div>';
-        
-        // Reload filters
-        google.script.run
-          .withSuccessHandler(function(options) {
-            if (options) {
-              filterOptions.locations = options.locations || [];
-              filterOptions.brands = options.brands || [];
-              filterOptions.categories = options.categories || [];
-              filterOptions.statuses = options.statuses || [];
-              filterOptions.staffList = options.staffList || [];
-            }
-            populateAllDropdowns();
-          })
-          .getFilterOptions();
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        document.getElementById('importResult').innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';
-      })
-      .parseCSVFromSheet();
-  }
+  document.getElementById('loadingOverlay').style.display = 'flex';
   
-  function initializeAllSheets() {
-    if (!confirm('Initialize semua sheets? Ini akan membuat sheets yang belum ada.')) return;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        showToast('Berhasil', result, 'success');
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .initializeSheets();
-  }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      var el = document.getElementById('importResult');
+      if (result && result.error) {
+        el.innerHTML = '<div class="alert alert-danger">' + result.error + '</div>';
+      } else {
+        el.innerHTML = '<div class="alert alert-success">Berhasil! ' + result.count + ' item di-import</div>';
+      }
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      document.getElementById('importResult').innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';
+    })
+    .parseCSVFromSheet();
+}
+
+function initializeAllSheets() {
+  if (!confirm('Initialize semua sheets?')) return;
   
-  function confirmReset() {
-    if (!confirm('PERINGATAN: Ini akan menghapus SEMUA data di sheet Data dan Assignment. Lanjutkan?')) return;
-    if (!confirm('Apakah Anda YAKIN? Data tidak bisa dikembalikan!')) return;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        
-        if (result && result.error) {
-          alert('Error: ' + result.error);
-          return;
-        }
-        
-        showToast('Berhasil', 'Semua data berhasil di-reset', 'success');
-        google.script.run.withSuccessHandler(updateDashboard).getDashboardData();
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .resetAllData();
-  }
+  document.getElementById('loadingOverlay').style.display = 'flex';
   
-  function confirmClearAssignments() {
-    if (!confirm('Hapus semua assignment?')) return;
-    
-    showLoading(true);
-    
-    google.script.run
-      .withSuccessHandler(function(result) {
-        showLoading(false);
-        
-        if (result && result.error) {
-          alert('Error: ' + result.error);
-          return;
-        }
-        
-        showToast('Berhasil', 'Semua assignment berhasil dihapus', 'success');
-      })
-      .withFailureHandler(function(err) {
-        showLoading(false);
-        alert('Error: ' + err.message);
-      })
-      .clearAllAssignments();
-  }
+  google.script.run
+    .withSuccessHandler(function(result) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      alert(result);
+    })
+    .withFailureHandler(function(err) {
+      document.getElementById('loadingOverlay').style.display = 'none';
+      alert('Error: ' + err.message);
+    })
+    .initializeSheets();
+}
+
+function confirmReset() {
+  if (!confirm('HAPUS SEMUA DATA?')) return;
+  if (!confirm('YAKIN? Data tidak bisa dikembalikan!')) return;
   
-  // ==================== UTILITY FUNCTIONS ====================
-  function escapeHtml(text) {
-    if (!text) return '';
-    return String(text)
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;')
-      .replace(/'/g, '&#039;');
-  }
+  google.script.run
+    .withSuccessHandler(function() {
+      alert('Data berhasil di-reset');
+      loadDashboard();
+    })
+    .resetAllData();
+}
+
+function confirmClearAssignments() {
+  if (!confirm('Hapus semua assignment?')) return;
   
-  function truncate(str, len) {
-    if (!str) return '';
-    str = String(str);
-    return str.length > len ? str.substring(0, len) + '...' : str;
-  }
-  
-  function showToast(title, message, type) {
-    type = type || 'info';
-    
-    var existingContainer = document.getElementById('toastContainer');
-    if (existingContainer) {
-      existingContainer.remove();
-    }
-    
-    var container = document.createElement('div');
-    container.id = 'toastContainer';
-    container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000; min-width: 250px;';
-    document.body.appendChild(container);
-    
-    var bgClass = type === 'success' ? 'bg-success' : (type === 'error' ? 'bg-danger' : 'bg-info');
-    
-    container.innerHTML = 
-      '<div class="toast show ' + bgClass + ' text-white" role="alert">' +
-        '<div class="toast-header ' + bgClass + ' text-white">' +
-          '<strong class="me-auto">' + title + '</strong>' +
-          '<button type="button" class="btn-close btn-close-white" onclick="this.closest(\'.toast\').remove()"></button>' +
-        '</div>' +
-        '<div class="toast-body">' + message + '</div>' +
-      '</div>';
-    
-    setTimeout(function() {
-      var toast = container.querySelector('.toast');
-      if (toast) toast.remove();
-    }, 3000);
-  }
+  google.script.run
+    .withSuccessHandler(function() {
+      alert('Assignment berhasil dihapus');
+    })
+    .clearAllAssignments();
+}
 </script>

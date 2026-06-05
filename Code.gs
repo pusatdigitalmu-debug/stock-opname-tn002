@@ -1,5 +1,5 @@
 // ==================== CONFIGURATION ====================
-const SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+// SPREADSHEET_ID is unused and calling it in global scope crashes script load if active spreadsheet is inaccessible.
 const SHEET_DATA = 'Data';
 const SHEET_USERS = 'Users';
 const SHEET_ASSIGNMENT = 'Assignment';
