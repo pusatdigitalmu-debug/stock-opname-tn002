@@ -238,140 +238,165 @@ function isCurrentUserAdmin() {
 
 // ==================== DASHBOARD DATA ====================
 function getDashboardData() {
-  const dataSheet = getSheet(SHEET_DATA);
-  if (!dataSheet) return { error: 'Data sheet not found' };
-  
-  const data = dataSheet.getDataRange().getValues();
-  const headers = data[0];
-  
-  let totalItems = 0;
-  let countedItems = 0;
-  let matchItems = 0;
-  let selisihItems = 0;
-  
-  const locationStats = {};
-  const brandStats = {};
-  const categoryStats = {};
-  const staffStats = {};
-  
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    if (!row[0]) continue; // Skip empty rows
-    
-    totalItems++;
-    
-    const location = row[1] || 'Unknown';
-    const brand = row[5] || 'Unknown';
-    const category = row[4] || 'Unknown';
-    const assignedTo = row[11] || 'Unassigned';
-    const status = row[10] || 'Belum';
-    
-    // Location stats
-    if (!locationStats[location]) {
-      locationStats[location] = { total: 0, counted: 0, match: 0, selisih: 0 };
-    }
-    locationStats[location].total++;
-    
-    // Brand stats
-    if (!brandStats[brand]) {
-      brandStats[brand] = { total: 0, counted: 0 };
-    }
-    brandStats[brand].total++;
-    
-    // Category stats
-    if (!categoryStats[category]) {
-      categoryStats[category] = { total: 0, counted: 0 };
-    }
-    categoryStats[category].total++;
-    
-    // Staff stats
-    if (!staffStats[assignedTo]) {
-      staffStats[assignedTo] = { total: 0, counted: 0 };
-    }
-    staffStats[assignedTo].total++;
-    
-    if (status !== 'Belum') {
-      countedItems++;
-      locationStats[location].counted++;
-      brandStats[brand].counted++;
-      categoryStats[category].counted++;
-      staffStats[assignedTo].counted++;
-      
-      if (status === 'Match') {
-        matchItems++;
-        locationStats[location].match++;
-      } else if (status === 'Selisih') {
-        selisihItems++;
-        locationStats[location].selisih++;
-      }
-    }
-  }
-  
-  return {
-    totalItems,
-    countedItems,
-    matchItems,
-    selisihItems,
-    percentage: totalItems > 0 ? Math.round((countedItems / totalItems) * 100) : 0,
-    locationStats,
-    brandStats,
-    categoryStats,
-    staffStats
+  // Default empty result
+  const defaultResult = {
+    totalItems: 0,
+    countedItems: 0,
+    matchItems: 0,
+    selisihItems: 0,
+    percentage: 0,
+    locationStats: {},
+    brandStats: {},
+    categoryStats: {},
+    staffStats: {}
   };
-}
-
-// ==================== ITEMS MANAGEMENT ====================
-function getAllItems(filters) {
-  const dataSheet = getSheet(SHEET_DATA);
-  if (!dataSheet) return [];
   
-  const data = dataSheet.getDataRange().getValues();
-  const items = [];
-  
-  for (let i = 1; i < data.length; i++) {
-    const row = data[i];
-    if (!row[0]) continue;
+  try {
+    const dataSheet = getSheet(SHEET_DATA);
+    if (!dataSheet) return defaultResult;
     
-    const item = {
-      id: row[0],
-      location: row[1],
-      productName: row[2],
-      internalRef: row[3],
-      category: row[4],
-      brand: row[5],
-      lotSerial: row[6],
-      qtySystem: row[7],
-      qtyFisik: row[8],
-      selisih: row[9],
-      status: row[10],
-      assignedTo: row[11],
-      inputter: row[12],
-      timestamp: row[13],
-      keterangan: row[14]
-    };
+    const data = dataSheet.getDataRange().getValues();
+    if (!data || data.length <= 1) return defaultResult;
     
-    // Apply filters
-    let include = true;
+    let totalItems = 0;
+    let countedItems = 0;
+    let matchItems = 0;
+    let selisihItems = 0;
     
-    if (filters) {
-      if (filters.location && item.location !== filters.location) include = false;
-      if (filters.brand && item.brand !== filters.brand) include = false;
-      if (filters.category && item.category !== filters.category) include = false;
-      if (filters.status && item.status !== filters.status) include = false;
-      if (filters.assignedTo && item.assignedTo !== filters.assignedTo) include = false;
-      if (filters.search) {
-        const searchLower = filters.search.toLowerCase();
-        if (!item.productName.toLowerCase().includes(searchLower) && 
-            !item.internalRef.toLowerCase().includes(searchLower)) {
-          include = false;
+    const locationStats = {};
+    const brandStats = {};
+    const categoryStats = {};
+    const staffStats = {};
+    
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[0]) continue; // Skip empty rows
+      
+      totalItems++;
+      
+      const location = row[1] || 'Unknown';
+      const brand = row[5] || 'Unknown';
+      const category = row[4] || 'Unknown';
+      const assignedTo = row[11] || 'Unassigned';
+      const status = row[10] || 'Belum';
+      
+      // Location stats
+      if (!locationStats[location]) {
+        locationStats[location] = { total: 0, counted: 0, match: 0, selisih: 0 };
+      }
+      locationStats[location].total++;
+      
+      // Brand stats
+      if (!brandStats[brand]) {
+        brandStats[brand] = { total: 0, counted: 0 };
+      }
+      brandStats[brand].total++;
+      
+      // Category stats
+      if (!categoryStats[category]) {
+        categoryStats[category] = { total: 0, counted: 0 };
+      }
+      categoryStats[category].total++;
+      
+      // Staff stats
+      if (!staffStats[assignedTo]) {
+        staffStats[assignedTo] = { total: 0, counted: 0 };
+      }
+      staffStats[assignedTo].total++;
+      
+      if (status !== 'Belum') {
+        countedItems++;
+        locationStats[location].counted++;
+        brandStats[brand].counted++;
+        categoryStats[category].counted++;
+        staffStats[assignedTo].counted++;
+        
+        if (status === 'Match') {
+          matchItems++;
+          locationStats[location].match++;
+        } else if (status === 'Selisih') {
+          selisihItems++;
+          locationStats[location].selisih++;
         }
       }
     }
     
-    if (include) items.push(item);
+    return {
+      totalItems,
+      countedItems,
+      matchItems,
+      selisihItems,
+      percentage: totalItems > 0 ? Math.round((countedItems / totalItems) * 100) : 0,
+      locationStats,
+      brandStats,
+      categoryStats,
+      staffStats
+    };
+  } catch (e) {
+    console.error('Error in getDashboardData:', e);
+    return defaultResult;
   }
-  
-  return items;
+}
+
+// ==================== ITEMS MANAGEMENT ====================
+function getAllItems(filters) {
+  try {
+    const dataSheet = getSheet(SHEET_DATA);
+    if (!dataSheet) return [];
+    
+    const data = dataSheet.getDataRange().getValues();
+    if (!data || data.length <= 1) return [];
+    
+    const items = [];
+    
+    for (let i = 1; i < data.length; i++) {
+      const row = data[i];
+      if (!row[0]) continue;
+      
+      const item = {
+        id: row[0],
+        location: row[1] || '',
+        productName: row[2] || '',
+        internalRef: row[3] || '',
+        category: row[4] || '',
+        brand: row[5] || '',
+        lotSerial: row[6] || '',
+        qtySystem: row[7] || 0,
+        qtyFisik: row[8] !== undefined && row[8] !== '' ? row[8] : '',
+        selisih: row[9] !== undefined && row[9] !== '' ? row[9] : '',
+        status: row[10] || 'Belum',
+        assignedTo: row[11] || '',
+        inputter: row[12] || '',
+        timestamp: row[13] || '',
+        keterangan: row[14] || ''
+      };
+      
+      // Apply filters
+      let include = true;
+      
+      if (filters) {
+        if (filters.location && item.location !== filters.location) include = false;
+        if (filters.brand && item.brand !== filters.brand) include = false;
+        if (filters.category && item.category !== filters.category) include = false;
+        if (filters.status && item.status !== filters.status) include = false;
+        if (filters.assignedTo && item.assignedTo !== filters.assignedTo) include = false;
+        if (filters.search) {
+          const searchLower = filters.search.toLowerCase();
+          if (!item.productName.toLowerCase().includes(searchLower) && 
+              !item.internalRef.toLowerCase().includes(searchLower)) {
+            include = false;
+          }
+        }
+      }
+      
+      if (include) items.push(item);
+    }
+    
+    return items;
+  } catch (e) {
+    console.error('Error in getAllItems:', e);
+    return [];
+  }
 }
 
 function getAssignedItems() {
@@ -521,32 +546,47 @@ function removeAssignment(assignmentId) {
 
 // ==================== FILTER OPTIONS ====================
 function getFilterOptions() {
-  const dataSheet = getSheet(SHEET_DATA);
-  if (!dataSheet) return {};
-  
-  const data = dataSheet.getDataRange().getValues();
-  
-  const locations = new Set();
-  const brands = new Set();
-  const categories = new Set();
-  const statuses = new Set();
-  const staffList = new Set();
-  
-  for (let i = 1; i < data.length; i++) {
-    if (data[i][1]) locations.add(data[i][1]);
-    if (data[i][5]) brands.add(data[i][5]);
-    if (data[i][4]) categories.add(data[i][4]);
-    if (data[i][10]) statuses.add(data[i][10]);
-    if (data[i][11]) staffList.add(data[i][11]);
-  }
-  
-  return {
-    locations: Array.from(locations).sort(),
-    brands: Array.from(brands).sort(),
-    categories: Array.from(categories).sort(),
-    statuses: Array.from(statuses).sort(),
-    staffList: Array.from(staffList).sort()
+  // Return default empty arrays if sheets don't exist
+  const defaultResult = {
+    locations: [],
+    brands: [],
+    categories: [],
+    statuses: [],
+    staffList: []
   };
+  
+  try {
+    const dataSheet = getSheet(SHEET_DATA);
+    if (!dataSheet) return defaultResult;
+    
+    const data = dataSheet.getDataRange().getValues();
+    if (!data || data.length <= 1) return defaultResult;
+    
+    const locations = new Set();
+    const brands = new Set();
+    const categories = new Set();
+    const statuses = new Set();
+    const staffList = new Set();
+    
+    for (let i = 1; i < data.length; i++) {
+      if (data[i][1]) locations.add(data[i][1]);
+      if (data[i][5]) brands.add(data[i][5]);
+      if (data[i][4]) categories.add(data[i][4]);
+      if (data[i][10]) statuses.add(data[i][10]);
+      if (data[i][11]) staffList.add(data[i][11]);
+    }
+    
+    return {
+      locations: Array.from(locations).sort(),
+      brands: Array.from(brands).sort(),
+      categories: Array.from(categories).sort(),
+      statuses: Array.from(statuses).sort(),
+      staffList: Array.from(staffList).sort()
+    };
+  } catch (e) {
+    console.error('Error in getFilterOptions:', e);
+    return defaultResult;
+  }
 }
 
 // ==================== REPORT ====================

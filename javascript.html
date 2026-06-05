@@ -1,346 +1,287 @@
 <script>
   // ==================== GLOBAL STATE ====================
-  let currentUser = null;
-  let currentRole = null;
-  let isAdmin = false;
-  let allItemsData = [];
-  let filterOptions = {
+  var currentUser = '';
+  var currentRole = 'Staff';
+  var isAdmin = false;
+  var allItemsData = [];
+  var filterOptions = {
     locations: [],
     brands: [],
     categories: [],
     statuses: [],
     staffList: []
   };
-  let currentInputFilter = {};
-  let appInitialized = false;
   
   // ==================== INITIALIZATION ====================
-  document.addEventListener('DOMContentLoaded', function() {
-    initializeApp();
-  });
+  window.onload = function() {
+    initApp();
+  };
   
-  function initializeApp() {
+  function initApp() {
     showLoading(true);
     
-    // Get current user info first
+    // Step 1: Get user email
     google.script.run
       .withSuccessHandler(function(email) {
-        setUserEmail(email);
+        currentUser = email || '';
+        document.getElementById('userEmail').textContent = currentUser;
         
+        // Step 2: Get user role
         google.script.run
           .withSuccessHandler(function(role) {
-            setUserRole(role);
-            hideAdminElements();
+            currentRole = role || 'Staff';
+            isAdmin = (currentRole === 'Admin');
+            document.getElementById('userRole').textContent = currentRole;
             
-            // Try to load filter options and dashboard
-            loadFilterOptions()
-              .then(() => loadDashboard())
-              .then(() => {
-                appInitialized = true;
-                showLoading(false);
-              })
-              .catch(err => {
-                console.error('Init warning:', err);
-                showLoading(false);
-              });
+            if (!isAdmin) {
+              hideElementsByClass('admin-only');
+            }
+            
+            // Step 3: Load filter options
+            loadFiltersAndDashboard();
           })
-          .withFailureHandler(function(err) {
-            console.error('Error getting role:', err);
+          .withFailureHandler(function() {
             document.getElementById('userRole').textContent = 'Staff';
-            showLoading(false);
+            loadFiltersAndDashboard();
           })
           .getCurrentUserRole();
       })
-      .withFailureHandler(function(err) {
-        console.error('Error getting email:', err);
+      .withFailureHandler(function() {
         document.getElementById('userEmail').textContent = 'Unknown';
+        document.getElementById('userRole').textContent = 'Staff';
         showLoading(false);
       })
       .getCurrentUserEmail();
   }
   
-  function setUserRole(role) {
-    currentRole = role || 'Staff';
-    isAdmin = currentRole === 'Admin';
-    document.getElementById('userRole').textContent = currentRole;
-    
-    if (!isAdmin) {
-      document.querySelectorAll('.admin-only').forEach(el => {
-        el.style.display = 'none';
-      });
+  function hideElementsByClass(className) {
+    var elements = document.getElementsByClassName(className);
+    for (var i = 0; i < elements.length; i++) {
+      elements[i].style.display = 'none';
     }
   }
   
-  function setUserEmail(email) {
-    currentUser = email || '';
-    document.getElementById('userEmail').textContent = currentUser;
-  }
-  
-  function hideAdminElements() {
-    if (!isAdmin) {
-      document.querySelectorAll('.admin-only').forEach(el => {
-        el.style.display = 'none';
-      });
-    }
+  function loadFiltersAndDashboard() {
+    google.script.run
+      .withSuccessHandler(function(options) {
+        if (options && options.locations) {
+          filterOptions.locations = options.locations || [];
+          filterOptions.brands = options.brands || [];
+          filterOptions.categories = options.categories || [];
+          filterOptions.statuses = options.statuses || [];
+          filterOptions.staffList = options.staffList || [];
+        }
+        
+        populateAllDropdowns();
+        
+        // Load dashboard
+        google.script.run
+          .withSuccessHandler(function(data) {
+            updateDashboard(data);
+            showLoading(false);
+          })
+          .withFailureHandler(function() {
+            showLoading(false);
+          })
+          .getDashboardData();
+      })
+      .withFailureHandler(function() {
+        showLoading(false);
+      })
+      .getFilterOptions();
   }
   
   function showLoading(show) {
-    const overlay = document.getElementById('loadingOverlay');
+    var overlay = document.getElementById('loadingOverlay');
     if (overlay) {
       if (show) {
-        overlay.classList.remove('hidden');
+        overlay.style.display = 'flex';
       } else {
-        overlay.classList.add('hidden');
+        overlay.style.display = 'none';
       }
+    }
+  }
+  
+  // ==================== POPULATE DROPDOWNS ====================
+  function populateAllDropdowns() {
+    var locs = filterOptions.locations || [];
+    var brands = filterOptions.brands || [];
+    var cats = filterOptions.categories || [];
+    
+    // Location dropdowns
+    setDropdownOptions('filterLocationInput', locs, 'Semua Lokasi');
+    setDropdownOptions('filterAllLocation', locs, 'Semua Lokasi');
+    setDropdownOptions('reportLocation', locs, 'Semua Lokasi');
+    
+    // Brand dropdowns
+    setDropdownOptions('filterAllBrand', brands, 'Semua Brand');
+    setDropdownOptions('reportBrand', brands, 'Semua Brand');
+    
+    // Category dropdowns
+    setDropdownOptions('filterAllCategory', cats, 'Semua Kategori');
+    setDropdownOptions('reportCategory', cats, 'Semua Kategori');
+  }
+  
+  function setDropdownOptions(elementId, options, defaultText) {
+    var select = document.getElementById(elementId);
+    if (!select) return;
+    
+    select.innerHTML = '<option value="">' + defaultText + '</option>';
+    
+    if (options && options.length > 0) {
+      for (var i = 0; i < options.length; i++) {
+        var opt = document.createElement('option');
+        opt.value = options[i];
+        opt.textContent = options[i];
+        select.appendChild(opt);
+      }
+    }
+  }
+  
+  // ==================== DASHBOARD ====================
+  function updateDashboard(data) {
+    if (!data) return;
+    
+    document.getElementById('totalItems').textContent = data.totalItems || 0;
+    document.getElementById('countedItems').textContent = data.countedItems || 0;
+    document.getElementById('matchItems').textContent = data.matchItems || 0;
+    document.getElementById('selisihItems').textContent = data.selisihItems || 0;
+    
+    // Progress bar
+    var percentage = data.percentage || 0;
+    var progressBar = document.getElementById('progressBar');
+    if (progressBar) {
+      progressBar.style.width = percentage + '%';
+      progressBar.textContent = percentage + '%';
+    }
+    
+    // Location stats
+    renderLocationStats(data.locationStats || {});
+    
+    // Staff stats (admin only)
+    if (isAdmin) {
+      renderStaffStats(data.staffStats || {});
+    }
+  }
+  
+  function renderLocationStats(stats) {
+    var container = document.getElementById('locationStats');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    var keys = Object.keys(stats);
+    if (keys.length === 0) {
+      container.innerHTML = '<p class="text-muted">Belum ada data</p>';
+      return;
+    }
+    
+    keys.sort();
+    for (var i = 0; i < keys.length; i++) {
+      var location = keys[i];
+      var stat = stats[location];
+      var pct = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
+      var barClass = pct >= 100 ? 'bg-success' : (pct >= 50 ? 'bg-info' : 'bg-warning');
+      
+      container.innerHTML += 
+        '<div class="location-stat-item">' +
+          '<div class="d-flex justify-content-between align-items-center">' +
+            '<span class="location-name">' + location + '</span>' +
+            '<span class="text-muted">' + (stat.counted || 0) + ' / ' + (stat.total || 0) + ' item</span>' +
+          '</div>' +
+          '<div class="progress">' +
+            '<div class="progress-bar ' + barClass + '" role="progressbar" style="width: ' + pct + '%">' + pct + '%</div>' +
+          '</div>' +
+          '<div class="d-flex gap-3 mt-1">' +
+            '<small class="text-success"><i class="bi bi-check-circle"></i> Match: ' + (stat.match || 0) + '</small>' +
+            '<small class="text-danger"><i class="bi bi-exclamation-circle"></i> Selisih: ' + (stat.selisih || 0) + '</small>' +
+          '</div>' +
+        '</div>';
+    }
+  }
+  
+  function renderStaffStats(stats) {
+    var container = document.getElementById('staffStats');
+    if (!container) return;
+    
+    container.innerHTML = '';
+    
+    var keys = Object.keys(stats);
+    if (keys.length === 0) {
+      container.innerHTML = '<p class="text-muted">Belum ada data staff</p>';
+      return;
+    }
+    
+    keys.sort();
+    for (var i = 0; i < keys.length; i++) {
+      var staff = keys[i];
+      var stat = stats[staff];
+      var pct = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
+      var barClass = pct >= 100 ? 'bg-success' : (pct >= 50 ? 'bg-info' : 'bg-warning');
+      
+      container.innerHTML += 
+        '<div class="location-stat-item">' +
+          '<div class="d-flex justify-content-between align-items-center">' +
+            '<span class="location-name">' + (staff || 'Unassigned') + '</span>' +
+            '<span class="text-muted">' + (stat.counted || 0) + ' / ' + (stat.total || 0) + ' item</span>' +
+          '</div>' +
+          '<div class="progress">' +
+            '<div class="progress-bar ' + barClass + '" role="progressbar" style="width: ' + pct + '%">' + pct + '%</div>' +
+          '</div>' +
+        '</div>';
     }
   }
   
   // ==================== PAGE NAVIGATION ====================
   function showPage(pageName) {
     // Hide all pages
-    document.querySelectorAll('.page-content').forEach(page => {
-      page.style.display = 'none';
-    });
-    
-    // Show selected page
-    const targetPage = document.getElementById(`page-${pageName}`);
-    if (targetPage) {
-      targetPage.style.display = 'block';
+    var pages = document.getElementsByClassName('page-content');
+    for (var i = 0; i < pages.length; i++) {
+      pages[i].style.display = 'none';
     }
     
-    // Update nav active state
-    document.querySelectorAll('.nav-link').forEach(link => {
-      link.classList.remove('active');
-    });
-    if (event && event.target) {
-      const navLink = event.target.closest('.nav-link');
-      if (navLink) {
-        navLink.classList.add('active');
-      }
+    // Show selected page
+    var target = document.getElementById('page-' + pageName);
+    if (target) {
+      target.style.display = 'block';
     }
     
     // Load page data
-    switch(pageName) {
-      case 'dashboard':
-        loadDashboard();
-        break;
-      case 'input':
-        loadInputItems();
-        break;
-      case 'allItems':
-        loadAllItems();
-        break;
-      case 'assignment':
-        loadAssignmentPage();
-        break;
-      case 'report':
-        loadReport();
-        break;
-      case 'users':
-        loadUsers();
-        break;
+    if (pageName === 'dashboard') {
+      google.script.run.withSuccessHandler(updateDashboard).getDashboardData();
+    } else if (pageName === 'input') {
+      loadInputItems();
+    } else if (pageName === 'allItems') {
+      loadAllItems();
+    } else if (pageName === 'assignment') {
+      loadAssignmentPage();
+    } else if (pageName === 'report') {
+      loadReport();
+    } else if (pageName === 'users') {
+      loadUsers();
     }
-  }
-  
-  // ==================== FILTER OPTIONS ====================
-  function loadFilterOptions() {
-    return new Promise((resolve) => {
-      google.script.run
-        .withSuccessHandler(function(options) {
-          if (options && typeof options === 'object') {
-            filterOptions = {
-              locations: options.locations || [],
-              brands: options.brands || [],
-              categories: options.categories || [],
-              statuses: options.statuses || [],
-              staffList: options.staffList || []
-            };
-          }
-          populateFilterDropdowns();
-          resolve();
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error loading filters:', err);
-          resolve();
-        })
-        .getFilterOptions();
-    });
-  }
-  
-  function populateFilterDropdowns() {
-    // Safety check - ensure filterOptions has required arrays
-    const locations = filterOptions.locations || [];
-    const brands = filterOptions.brands || [];
-    const categories = filterOptions.categories || [];
-    
-    // Location dropdowns
-    const locationDropdowns = ['filterLocationInput', 'filterAllLocation', 'reportLocation'];
-    locationDropdowns.forEach(id => {
-      const select = document.getElementById(id);
-      if (select) {
-        select.innerHTML = '<option value="">Semua Lokasi</option>';
-        locations.forEach(loc => {
-          select.innerHTML += `<option value="${loc}">${loc}</option>`;
-        });
-      }
-    });
-    
-    // Brand dropdowns
-    const brandDropdowns = ['filterAllBrand', 'reportBrand'];
-    brandDropdowns.forEach(id => {
-      const select = document.getElementById(id);
-      if (select) {
-        select.innerHTML = '<option value="">Semua Brand</option>';
-        brands.forEach(brand => {
-          select.innerHTML += `<option value="${brand}">${brand}</option>`;
-        });
-      }
-    });
-    
-    // Category dropdowns
-    const categoryDropdowns = ['filterAllCategory', 'reportCategory'];
-    categoryDropdowns.forEach(id => {
-      const select = document.getElementById(id);
-      if (select) {
-        select.innerHTML = '<option value="">Semua Kategori</option>';
-        categories.forEach(cat => {
-          select.innerHTML += `<option value="${cat}">${cat}</option>`;
-        });
-      }
-    });
-    
-    // Staff dropdown (for assignment)
-    const staffList = filterOptions.staffList || [];
-    const staffSelect = document.getElementById('assignStaff');
-    if (staffSelect) {
-      staffSelect.innerHTML = '<option value="">-- Pilih Staff --</option>';
-      staffList.forEach(staff => {
-        staffSelect.innerHTML += `<option value="${staff}">${staff}</option>`;
-      });
-    }
-  }
-  
-  // ==================== DASHBOARD ====================
-  function loadDashboard() {
-    return new Promise((resolve) => {
-      google.script.run
-        .withSuccessHandler(function(data) {
-          if (data.error) {
-            alert('Error: ' + data.error);
-            resolve();
-            return;
-          }
-          
-          // Update summary cards
-          document.getElementById('totalItems').textContent = data.totalItems;
-          document.getElementById('countedItems').textContent = data.countedItems;
-          document.getElementById('matchItems').textContent = data.matchItems;
-          document.getElementById('selisihItems').textContent = data.selisihItems;
-          
-          // Update progress bar
-          const progressBar = document.getElementById('progressBar');
-          progressBar.style.width = data.percentage + '%';
-          progressBar.textContent = data.percentage + '%';
-          
-          if (data.percentage >= 100) {
-            progressBar.classList.add('bg-success');
-          } else if (data.percentage >= 50) {
-            progressBar.classList.add('bg-info');
-          }
-          
-          // Update location stats
-          renderLocationStats(data.locationStats);
-          
-          // Update staff stats
-          if (isAdmin) {
-            renderStaffStats(data.staffStats);
-          }
-          
-          resolve();
-        })
-        .withFailureHandler(function(err) {
-          console.error('Error loading dashboard:', err);
-          resolve();
-        })
-        .getDashboardData();
-    });
-  }
-  
-  function renderLocationStats(stats) {
-    const container = document.getElementById('locationStats');
-    container.innerHTML = '';
-    
-    Object.keys(stats).sort().forEach(location => {
-      const stat = stats[location];
-      const percentage = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
-      
-      const html = `
-        <div class="location-stat-item">
-          <div class="d-flex justify-content-between align-items-center">
-            <span class="location-name">${location}</span>
-            <span class="text-muted">${stat.counted} / ${stat.total} item</span>
-          </div>
-          <div class="progress">
-            <div class="progress-bar ${percentage >= 100 ? 'bg-success' : percentage >= 50 ? 'bg-info' : 'bg-warning'}" 
-                 role="progressbar" style="width: ${percentage}%">${percentage}%</div>
-          </div>
-          <div class="d-flex gap-3 mt-1">
-            <small class="text-success"><i class="bi bi-check-circle"></i> Match: ${stat.match}</small>
-            <small class="text-danger"><i class="bi bi-exclamation-circle"></i> Selisih: ${stat.selisih}</small>
-          </div>
-        </div>
-      `;
-      container.innerHTML += html;
-    });
-  }
-  
-  function renderStaffStats(stats) {
-    const container = document.getElementById('staffStats');
-    container.innerHTML = '';
-    
-    Object.keys(stats).sort().forEach(staff => {
-      const stat = stats[staff];
-      const percentage = stat.total > 0 ? Math.round((stat.counted / stat.total) * 100) : 0;
-      
-      const html = `
-        <div class="location-stat-item">
-          <div class="d-flex justify-content-between align-items-center">
-            <span class="location-name">${staff || 'Unassigned'}</span>
-            <span class="text-muted">${stat.counted} / ${stat.total} item</span>
-          </div>
-          <div class="progress">
-            <div class="progress-bar ${percentage >= 100 ? 'bg-success' : percentage >= 50 ? 'bg-info' : 'bg-warning'}" 
-                 role="progressbar" style="width: ${percentage}%">${percentage}%</div>
-          </div>
-        </div>
-      `;
-      container.innerHTML += html;
-    });
   }
   
   // ==================== INPUT STOK ====================
   function loadInputItems() {
-    const search = document.getElementById('searchInput').value;
-    const location = document.getElementById('filterLocationInput').value;
-    const status = document.getElementById('filterStatusInput').value;
+    var search = document.getElementById('searchInput') ? document.getElementById('searchInput').value : '';
+    var location = document.getElementById('filterLocationInput') ? document.getElementById('filterLocationInput').value : '';
+    var status = document.getElementById('filterStatusInput') ? document.getElementById('filterStatusInput').value : '';
     
-    const filters = {};
+    var filters = {};
     if (search) filters.search = search;
     if (location) filters.location = location;
     if (status) filters.status = status;
-    
-    // For staff, only show assigned items
-    if (!isAdmin) {
-      filters.assignedTo = currentUser;
-    }
+    if (!isAdmin) filters.assignedTo = currentUser;
     
     google.script.run
       .withSuccessHandler(function(items) {
-        allItemsData = items;
-        renderInputItems(items);
+        allItemsData = items || [];
+        renderInputItems(allItemsData);
       })
-      .withFailureHandler(function(err) {
-        console.error('Error loading items:', err);
+      .withFailureHandler(function() {
+        allItemsData = [];
+        renderInputItems([]);
       })
       .getAllItems(filters);
   }
@@ -350,47 +291,52 @@
   }
   
   function renderInputItems(items) {
-    const container = document.getElementById('inputItemsList');
+    var container = document.getElementById('inputItemsList');
+    if (!container) return;
     
-    if (items.length === 0) {
-      container.innerHTML = `
-        <div class="empty-state">
-          <i class="bi bi-inbox"></i>
-          <p class="mt-2">Tidak ada item ditemukan</p>
-        </div>
-      `;
+    if (!items || items.length === 0) {
+      container.innerHTML = '<div class="empty-state"><i class="bi bi-inbox"></i><p class="mt-2">Tidak ada item ditemukan</p></div>';
       return;
     }
     
-    let html = '';
-    items.forEach(item => {
-      const statusClass = item.status === 'Match' ? 'status-match' : 
-                         item.status === 'Selisih' ? 'status-selisih' : 'status-belum';
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var statusClass = item.status === 'Match' ? 'status-match' : (item.status === 'Selisih' ? 'status-selisih' : 'status-belum');
+      var badgeClass = item.status === 'Match' ? 'badge-match' : (item.status === 'Selisih' ? 'badge-selisih' : 'badge-belum');
       
-      html += `
-        <div class="item-card ${statusClass}" onclick="openInputModal(${item.id})">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <div class="product-name">${item.productName}</div>
-              <div class="product-sku">${item.internalRef} | ${item.brand} | ${item.location}</div>
-            </div>
-            <span class="badge badge-${item.status.toLowerCase()}">${item.status}</span>
-          </div>
-          <div class="qty-info">
-            <span class="qty-badge qty-system">System: ${item.qtySystem}</span>
-            ${item.qtyFisik !== '' ? `<span class="qty-badge qty-fisik">Fisik: ${item.qtyFisik}</span>` : ''}
-            ${item.selisih !== '' ? `<span class="qty-badge qty-selisih">Selisih: ${item.selisih}</span>` : ''}
-          </div>
-        </div>
-      `;
-    });
+      html += '<div class="item-card ' + statusClass + '" onclick="openInputModal(' + item.id + ')">';
+      html += '<div class="d-flex justify-content-between align-items-start">';
+      html += '<div>';
+      html += '<div class="product-name">' + escapeHtml(item.productName) + '</div>';
+      html += '<div class="product-sku">' + escapeHtml(item.internalRef) + ' | ' + escapeHtml(item.brand) + ' | ' + escapeHtml(item.location) + '</div>';
+      html += '</div>';
+      html += '<span class="badge ' + badgeClass + '">' + item.status + '</span>';
+      html += '</div>';
+      html += '<div class="qty-info">';
+      html += '<span class="qty-badge qty-system">System: ' + item.qtySystem + '</span>';
+      if (item.qtyFisik !== '') {
+        html += '<span class="qty-badge qty-fisik">Fisik: ' + item.qtyFisik + '</span>';
+      }
+      if (item.selisih !== '') {
+        html += '<span class="qty-badge qty-selisih">Selisih: ' + item.selisih + '</span>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
     
     container.innerHTML = html;
   }
   
   // ==================== INPUT MODAL ====================
   function openInputModal(itemId) {
-    const item = allItemsData.find(i => i.id == itemId);
+    var item = null;
+    for (var i = 0; i < allItemsData.length; i++) {
+      if (allItemsData[i].id == itemId) {
+        item = allItemsData[i];
+        break;
+      }
+    }
     if (!item) return;
     
     document.getElementById('modalItemId').value = item.id;
@@ -398,19 +344,22 @@
     document.getElementById('modalSKU').textContent = item.internalRef;
     document.getElementById('modalQtySystem').textContent = item.qtySystem;
     document.getElementById('modalQtyFisik').value = item.qtyFisik || '';
-    document.getElementById('modalKeterangan').value = item.keterangan || '';
+    document.getElementById('modalKeterangan').value = '';
     document.getElementById('modalKeteranganText').value = '';
     
-    const modal = new bootstrap.Modal(document.getElementById('inputModal'));
+    var modal = new bootstrap.Modal(document.getElementById('inputModal'));
     modal.show();
   }
   
   function submitItemCount() {
-    const itemId = document.getElementById('modalItemId').value;
-    const qtyFisik = parseInt(document.getElementById('modalQtyFisik').value);
-    const keteranganSelect = document.getElementById('modalKeterangan').value;
-    const keteranganText = document.getElementById('modalKeteranganText').value;
-    const keterangan = keteranganSelect + (keteranganText ? ' - ' + keteranganText : '');
+    var itemId = document.getElementById('modalItemId').value;
+    var qtyFisik = parseInt(document.getElementById('modalQtyFisik').value);
+    var keteranganSelect = document.getElementById('modalKeterangan').value;
+    var keteranganText = document.getElementById('modalKeteranganText').value;
+    var keterangan = keteranganSelect;
+    if (keteranganText) {
+      keterangan = keterangan + ' - ' + keteranganText;
+    }
     
     if (isNaN(qtyFisik) || qtyFisik < 0) {
       alert('Qty Fisik harus berupa angka >= 0');
@@ -423,19 +372,19 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        if (result.error) {
+        if (result && result.error) {
           alert('Error: ' + result.error);
           return;
         }
         
         // Close modal
-        bootstrap.Modal.getInstance(document.getElementById('inputModal')).hide();
+        var modalEl = document.getElementById('inputModal');
+        var modal = bootstrap.Modal.getInstance(modalEl);
+        if (modal) modal.hide();
         
-        // Reload items
+        // Reload
         loadInputItems();
-        
-        // Show success message
-        showToast('Berhasil', `Qty Fisik berhasil disimpan. Selisih: ${result.selisih}`, 'success');
+        showToast('Berhasil', 'Qty Fisik berhasil disimpan. Selisih: ' + result.selisih, 'success');
       })
       .withFailureHandler(function(err) {
         showLoading(false);
@@ -446,13 +395,13 @@
   
   // ==================== ALL ITEMS ====================
   function loadAllItems() {
-    const location = document.getElementById('filterAllLocation').value;
-    const brand = document.getElementById('filterAllBrand').value;
-    const category = document.getElementById('filterAllCategory').value;
-    const status = document.getElementById('filterAllStatus').value;
-    const search = document.getElementById('searchAll').value;
+    var location = document.getElementById('filterAllLocation') ? document.getElementById('filterAllLocation').value : '';
+    var brand = document.getElementById('filterAllBrand') ? document.getElementById('filterAllBrand').value : '';
+    var category = document.getElementById('filterAllCategory') ? document.getElementById('filterAllCategory').value : '';
+    var status = document.getElementById('filterAllStatus') ? document.getElementById('filterAllStatus').value : '';
+    var search = document.getElementById('searchAll') ? document.getElementById('searchAll').value : '';
     
-    const filters = {};
+    var filters = {};
     if (location) filters.location = location;
     if (brand) filters.brand = brand;
     if (category) filters.category = category;
@@ -461,68 +410,56 @@
     
     google.script.run
       .withSuccessHandler(function(items) {
-        allItemsData = items;
-        renderAllItemsTable(items);
+        allItemsData = items || [];
+        renderAllItemsTable(allItemsData);
       })
-      .withFailureHandler(function(err) {
-        console.error('Error loading items:', err);
+      .withFailureHandler(function() {
+        allItemsData = [];
+        renderAllItemsTable([]);
       })
       .getAllItems(filters);
   }
   
   function renderAllItemsTable(items) {
-    const tbody = document.getElementById('allItemsBody');
+    var tbody = document.getElementById('allItemsBody');
+    if (!tbody) return;
     
-    if (items.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="11" class="text-center text-muted">Tidak ada data</td>
-        </tr>
-      `;
+    if (!items || items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="11" class="text-center text-muted">Tidak ada data</td></tr>';
       return;
     }
     
-    let html = '';
-    items.forEach(item => {
-      const rowClass = item.status === 'Selisih' ? 'table-selisih' : 
-                      item.status === 'Match' ? 'table-match' : '';
+    var html = '';
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var rowClass = item.status === 'Selisih' ? 'table-selisih' : (item.status === 'Match' ? 'table-match' : '');
+      var badgeClass = item.status === 'Match' ? 'badge-match' : (item.status === 'Selisih' ? 'badge-selisih' : 'badge-belum');
       
-      html += `
-        <tr class="${rowClass}">
-          <td>${item.id}</td>
-          <td>${item.location}</td>
-          <td title="${item.productName}">${truncate(item.productName, 40)}</td>
-          <td>${item.internalRef}</td>
-          <td>${item.brand}</td>
-          <td>${item.qtySystem}</td>
-          <td>${item.qtyFisik !== '' ? item.qtyFisik : '-'}</td>
-          <td>${item.selisih !== '' ? item.selisih : '-'}</td>
-          <td><span class="badge badge-${item.status.toLowerCase()}">${item.status}</span></td>
-          <td title="${item.assignedTo}">${truncate(item.assignedTo, 20)}</td>
-          <td>
-            <button class="btn btn-sm btn-primary" onclick="openInputModal(${item.id})">
-              <i class="bi bi-pencil"></i>
-            </button>
-          </td>
-        </tr>
-      `;
-    });
+      html += '<tr class="' + rowClass + '">';
+      html += '<td>' + item.id + '</td>';
+      html += '<td>' + escapeHtml(item.location) + '</td>';
+      html += '<td title="' + escapeHtml(item.productName) + '">' + truncate(item.productName, 35) + '</td>';
+      html += '<td>' + escapeHtml(item.internalRef) + '</td>';
+      html += '<td>' + escapeHtml(item.brand) + '</td>';
+      html += '<td>' + item.qtySystem + '</td>';
+      html += '<td>' + (item.qtyFisik !== '' ? item.qtyFisik : '-') + '</td>';
+      html += '<td>' + (item.selisih !== '' ? item.selisih : '-') + '</td>';
+      html += '<td><span class="badge ' + badgeClass + '">' + item.status + '</span></td>';
+      html += '<td>' + truncate(item.assignedTo, 15) + '</td>';
+      html += '<td><button class="btn btn-sm btn-primary" onclick="openInputModal(' + item.id + ')"><i class="bi bi-pencil"></i></button></td>';
+      html += '</tr>';
+    }
     
     tbody.innerHTML = html;
   }
   
-  function truncate(str, len) {
-    if (!str) return '';
-    return str.length > len ? str.substring(0, len) + '...' : str;
-  }
-  
   function exportCurrentView() {
-    const location = document.getElementById('filterAllLocation').value;
-    const brand = document.getElementById('filterAllBrand').value;
-    const category = document.getElementById('filterAllCategory').value;
-    const status = document.getElementById('filterAllStatus').value;
+    var location = document.getElementById('filterAllLocation') ? document.getElementById('filterAllLocation').value : '';
+    var brand = document.getElementById('filterAllBrand') ? document.getElementById('filterAllBrand').value : '';
+    var category = document.getElementById('filterAllCategory') ? document.getElementById('filterAllCategory').value : '';
+    var status = document.getElementById('filterAllStatus') ? document.getElementById('filterAllStatus').value : '';
     
-    const filters = {};
+    var filters = {};
     if (location) filters.location = location;
     if (brand) filters.brand = brand;
     if (category) filters.category = category;
@@ -543,8 +480,8 @@
   }
   
   function downloadCSV(csv, filename) {
-    const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-    const link = document.createElement('a');
+    var blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+    var link = document.createElement('a');
     link.href = URL.createObjectURL(blob);
     link.download = filename;
     link.click();
@@ -552,95 +489,94 @@
   
   // ==================== ASSIGNMENT PAGE ====================
   function loadAssignmentPage() {
-    // Load staff list for dropdown
+    // Load staff list
     google.script.run
       .withSuccessHandler(function(users) {
-        const staffSelect = document.getElementById('assignStaff');
-        staffSelect.innerHTML = '<option value="">-- Pilih Staff --</option>';
-        users.filter(u => u.role === 'Staff' && u.status === 'Active').forEach(user => {
-          staffSelect.innerHTML += `<option value="${user.email}">${user.name} (${user.email})</option>`;
-        });
+        var staffSelect = document.getElementById('assignStaff');
+        if (staffSelect) {
+          staffSelect.innerHTML = '<option value="">-- Pilih Staff --</option>';
+          if (users) {
+            for (var i = 0; i < users.length; i++) {
+              if (users[i].role === 'Staff' && users[i].status === 'Active') {
+                var opt = document.createElement('option');
+                opt.value = users[i].email;
+                opt.textContent = users[i].name + ' (' + users[i].email + ')';
+                staffSelect.appendChild(opt);
+              }
+            }
+          }
+        }
       })
       .getUsers();
     
-    // Load filter options for assignment
     updateFilterOptions();
-    
-    // Load current assignments
     loadAssignments();
   }
   
   function updateFilterOptions() {
-    const filterType = document.getElementById('assignFilterType').value;
-    const filterValueSelect = document.getElementById('assignFilterValue');
+    var filterType = document.getElementById('assignFilterType') ? document.getElementById('assignFilterType').value : 'Location';
+    var filterValueSelect = document.getElementById('assignFilterValue');
+    if (!filterValueSelect) return;
     
     filterValueSelect.innerHTML = '';
     
-    switch(filterType) {
-      case 'Location':
-        filterOptions.locations.forEach(loc => {
-          filterValueSelect.innerHTML += `<option value="${loc}">${loc}</option>`;
-        });
-        break;
-      case 'Brand':
-        filterOptions.brands.forEach(brand => {
-          filterValueSelect.innerHTML += `<option value="${brand}">${brand}</option>`;
-        });
-        break;
-      case 'Category':
-        filterOptions.categories.forEach(cat => {
-          filterValueSelect.innerHTML += `<option value="${cat}">${cat}</option>`;
-        });
-        break;
-      case 'All':
-        filterValueSelect.innerHTML = '<option value="all">Semua Item</option>';
-        break;
+    var options = [];
+    if (filterType === 'Location') {
+      options = filterOptions.locations || [];
+    } else if (filterType === 'Brand') {
+      options = filterOptions.brands || [];
+    } else if (filterType === 'Category') {
+      options = filterOptions.categories || [];
+    } else if (filterType === 'All') {
+      options = ['all'];
+    }
+    
+    for (var i = 0; i < options.length; i++) {
+      var opt = document.createElement('option');
+      opt.value = options[i];
+      opt.textContent = options[i];
+      filterValueSelect.appendChild(opt);
     }
   }
   
   function loadAssignments() {
     google.script.run
-      .withSuccessHandler(function(assignments) {
-        renderAssignments(assignments);
-      })
+      .withSuccessHandler(renderAssignments)
       .getAssignments();
   }
   
   function renderAssignments(assignments) {
-    const container = document.getElementById('assignmentsList');
+    var container = document.getElementById('assignmentsList');
+    if (!container) return;
     
-    if (assignments.length === 0) {
+    if (!assignments || assignments.length === 0) {
       container.innerHTML = '<p class="text-muted">Belum ada assignment</p>';
       return;
     }
     
-    let html = '';
-    assignments.filter(a => a.status === 'Active').forEach(assignment => {
-      html += `
-        <div class="assignment-card">
-          <div class="d-flex justify-content-between align-items-start">
-            <div>
-              <div class="user-email">${assignment.userEmail}</div>
-              <div class="filter-info">
-                <i class="bi bi-funnel"></i> ${assignment.filterType}: ${assignment.filterValue}
-              </div>
-              <small class="text-muted">${new Date(assignment.dateAssigned).toLocaleString('id-ID')}</small>
-            </div>
-            <button class="btn btn-sm btn-danger" onclick="removeAssignment('${assignment.id}')">
-              <i class="bi bi-trash"></i>
-            </button>
-          </div>
-        </div>
-      `;
-    });
+    var html = '';
+    for (var i = 0; i < assignments.length; i++) {
+      var a = assignments[i];
+      if (a.status !== 'Active') continue;
+      
+      html += '<div class="assignment-card">';
+      html += '<div class="d-flex justify-content-between align-items-start">';
+      html += '<div>';
+      html += '<div class="user-email">' + escapeHtml(a.userEmail) + '</div>';
+      html += '<div class="filter-info"><i class="bi bi-funnel"></i> ' + escapeHtml(a.filterType) + ': ' + escapeHtml(a.filterValue) + '</div>';
+      html += '</div>';
+      html += '<button class="btn btn-sm btn-danger" onclick="removeAssignment(\'' + a.id + '\')"><i class="bi bi-trash"></i></button>';
+      html += '</div>';
+      html += '</div>';
+    }
     
     container.innerHTML = html || '<p class="text-muted">Belum ada assignment aktif</p>';
   }
   
   function createAssignment() {
-    const userEmail = document.getElementById('assignStaff').value;
-    const filterType = document.getElementById('assignFilterType').value;
-    const filterValue = document.getElementById('assignFilterValue').value;
+    var userEmail = document.getElementById('assignStaff') ? document.getElementById('assignStaff').value : '';
+    var filterType = document.getElementById('assignFilterType') ? document.getElementById('assignFilterType').value : '';
+    var filterValue = document.getElementById('assignFilterValue') ? document.getElementById('assignFilterValue').value : '';
     
     if (!userEmail) {
       alert('Pilih staff terlebih dahulu');
@@ -658,12 +594,12 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        if (result.error) {
+        if (result && result.error) {
           alert('Error: ' + result.error);
           return;
         }
         
-        showToast('Berhasil', `${result.assignedCount} item berhasil di-assign ke ${userEmail}`, 'success');
+        showToast('Berhasil', result.assignedCount + ' item berhasil di-assign ke ' + userEmail, 'success');
         loadAssignments();
       })
       .withFailureHandler(function(err) {
@@ -682,7 +618,7 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        if (result.error) {
+        if (result && result.error) {
           alert('Error: ' + result.error);
           return;
         }
@@ -699,72 +635,74 @@
   
   // ==================== REPORT PAGE ====================
   function loadReport() {
-    const location = document.getElementById('reportLocation').value;
-    const brand = document.getElementById('reportBrand').value;
-    const category = document.getElementById('reportCategory').value;
-    const status = document.getElementById('reportStatus').value;
+    var location = document.getElementById('reportLocation') ? document.getElementById('reportLocation').value : '';
+    var brand = document.getElementById('reportBrand') ? document.getElementById('reportBrand').value : '';
+    var category = document.getElementById('reportCategory') ? document.getElementById('reportCategory').value : '';
+    var status = document.getElementById('reportStatus') ? document.getElementById('reportStatus').value : '';
     
-    const filters = {};
+    var filters = {};
     if (location) filters.location = location;
     if (brand) filters.brand = brand;
     if (category) filters.category = category;
     if (status) filters.status = status;
     
     google.script.run
-      .withSuccessHandler(function(report) {
-        renderReport(report);
-      })
+      .withSuccessHandler(renderReport)
       .getReconciliationReport(filters);
   }
   
   function renderReport(report) {
-    // Update summary
-    document.getElementById('reportTotalSystem').textContent = report.totalQtySystem;
-    document.getElementById('reportTotalFisik').textContent = report.totalQtyFisik;
-    document.getElementById('reportTotalSelisih').textContent = report.totalSelisih;
+    if (!report) return;
     
-    // Render table
-    const tbody = document.getElementById('reportBody');
+    document.getElementById('reportTotalSystem').textContent = report.totalQtySystem || 0;
+    document.getElementById('reportTotalFisik').textContent = report.totalQtyFisik || 0;
+    document.getElementById('reportTotalSelisih').textContent = report.totalSelisih || 0;
     
-    if (report.items.length === 0) {
-      tbody.innerHTML = `
-        <tr>
-          <td colspan="10" class="text-center text-muted">Tidak ada data yang sudah dihitung</td>
-        </tr>
-      `;
+    var tbody = document.getElementById('reportBody');
+    if (!tbody) return;
+    
+    var items = report.items || [];
+    
+    if (items.length === 0) {
+      tbody.innerHTML = '<tr><td colspan="10" class="text-center text-muted">Tidak ada data yang sudah dihitung</td></tr>';
       return;
     }
     
-    let html = '';
-    report.items.forEach(item => {
-      const rowClass = item.selisih !== 0 ? 'table-selisih' : 'table-match';
+    var html = '';
+    var matchCount = 0;
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      var rowClass = item.selisih !== 0 ? 'table-selisih' : 'table-match';
+      if (item.selisih === 0) matchCount++;
       
-      html += `
-        <tr class="${rowClass}">
-          <td>${item.id}</td>
-          <td>${item.location}</td>
-          <td title="${item.productName}">${truncate(item.productName, 40)}</td>
-          <td>${item.internalRef}</td>
-          <td>${item.brand}</td>
-          <td>${item.qtySystem}</td>
-          <td>${item.qtyFisik}</td>
-          <td class="${item.selisih !== 0 ? 'text-danger fw-bold' : ''}">${item.selisih}</td>
-          <td>${item.keterangan || '-'}</td>
-          <td>${item.inputter || '-'}</td>
-        </tr>
-      `;
-    });
+      html += '<tr class="' + rowClass + '">';
+      html += '<td>' + item.id + '</td>';
+      html += '<td>' + escapeHtml(item.location) + '</td>';
+      html += '<td>' + truncate(item.productName, 35) + '</td>';
+      html += '<td>' + escapeHtml(item.internalRef) + '</td>';
+      html += '<td>' + escapeHtml(item.brand) + '</td>';
+      html += '<td>' + item.qtySystem + '</td>';
+      html += '<td>' + item.qtyFisik + '</td>';
+      html += '<td class="' + (item.selisih !== 0 ? 'text-danger fw-bold' : '') + '">' + item.selisih + '</td>';
+      html += '<td>' + escapeHtml(item.keterangan || '-') + '</td>';
+      html += '<td>' + escapeHtml(item.inputter || '-') + '</td>';
+      html += '</tr>';
+    }
     
     tbody.innerHTML = html;
+    
+    // Update match count if element exists
+    var matchCountEl = document.getElementById('reportMatchCount');
+    if (matchCountEl) matchCountEl.textContent = matchCount;
   }
   
   function exportReport() {
-    const location = document.getElementById('reportLocation').value;
-    const brand = document.getElementById('reportBrand').value;
-    const category = document.getElementById('reportCategory').value;
-    const status = document.getElementById('reportStatus').value;
+    var location = document.getElementById('reportLocation') ? document.getElementById('reportLocation').value : '';
+    var brand = document.getElementById('reportBrand') ? document.getElementById('reportBrand').value : '';
+    var category = document.getElementById('reportCategory') ? document.getElementById('reportCategory').value : '';
+    var status = document.getElementById('reportStatus') ? document.getElementById('reportStatus').value : '';
     
-    const filters = {};
+    var filters = {};
     if (location) filters.location = location;
     if (brand) filters.brand = brand;
     if (category) filters.category = category;
@@ -787,51 +725,47 @@
   // ==================== USERS PAGE ====================
   function loadUsers() {
     google.script.run
-      .withSuccessHandler(function(users) {
-        renderUsers(users);
-      })
+      .withSuccessHandler(renderUsers)
       .getUsers();
   }
   
   function renderUsers(users) {
-    const container = document.getElementById('usersList');
+    var container = document.getElementById('usersList');
+    if (!container) return;
     
-    if (users.length === 0) {
+    if (!users || users.length === 0) {
       container.innerHTML = '<p class="text-muted">Belum ada user</p>';
       return;
     }
     
-    let html = '';
-    users.forEach(user => {
-      const statusBadge = user.status === 'Active' ? 'bg-success' : 'bg-secondary';
+    var html = '';
+    for (var i = 0; i < users.length; i++) {
+      var user = users[i];
+      var statusBadge = user.status === 'Active' ? 'bg-success' : 'bg-secondary';
       
-      html += `
-        <div class="user-card">
-          <div class="user-info">
-            <div class="user-name">${user.name}</div>
-            <div class="user-email">${user.email}</div>
-            <div>
-              <span class="badge bg-primary">${user.role}</span>
-              <span class="badge ${statusBadge}">${user.status}</span>
-            </div>
-          </div>
-          <div>
-            ${user.status === 'Active' ? 
-              `<button class="btn btn-sm btn-warning" onclick="toggleUserStatus('${user.email}', 'Inactive')">Nonaktifkan</button>` :
-              `<button class="btn btn-sm btn-success" onclick="toggleUserStatus('${user.email}', 'Active')">Aktifkan</button>`
-            }
-          </div>
-        </div>
-      `;
-    });
+      html += '<div class="user-card">';
+      html += '<div class="user-info">';
+      html += '<div class="user-name">' + escapeHtml(user.name) + '</div>';
+      html += '<div class="user-email">' + escapeHtml(user.email) + '</div>';
+      html += '<div><span class="badge bg-primary">' + user.role + '</span> <span class="badge ' + statusBadge + '">' + user.status + '</span></div>';
+      html += '</div>';
+      html += '<div class="user-actions">';
+      if (user.status === 'Active') {
+        html += '<button class="btn btn-sm btn-warning" onclick="toggleUserStatus(\'' + escapeHtml(user.email) + '\', \'Inactive\')">Nonaktifkan</button>';
+      } else {
+        html += '<button class="btn btn-sm btn-success" onclick="toggleUserStatus(\'' + escapeHtml(user.email) + '\', \'Active\')">Aktifkan</button>';
+      }
+      html += '</div>';
+      html += '</div>';
+    }
     
     container.innerHTML = html;
   }
   
   function addNewUser() {
-    const email = document.getElementById('newUserEmail').value;
-    const name = document.getElementById('newUserName').value;
-    const role = document.getElementById('newUserRole').value;
+    var email = document.getElementById('newUserEmail') ? document.getElementById('newUserEmail').value : '';
+    var name = document.getElementById('newUserName') ? document.getElementById('newUserName').value : '';
+    var role = document.getElementById('newUserRole') ? document.getElementById('newUserRole').value : 'Staff';
     
     if (!email || !name) {
       alert('Email dan Nama harus diisi');
@@ -844,18 +778,16 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        if (result.error) {
+        if (result && result.error) {
           alert('Error: ' + result.error);
           return;
         }
         
-        showToast('Berhasil', `User ${email} berhasil ditambahkan`, 'success');
+        showToast('Berhasil', 'User ' + email + ' berhasil ditambahkan', 'success');
         
-        // Clear form
         document.getElementById('newUserEmail').value = '';
         document.getElementById('newUserName').value = '';
         
-        // Reload users
         loadUsers();
       })
       .withFailureHandler(function(err) {
@@ -866,8 +798,8 @@
   }
   
   function toggleUserStatus(email, newStatus) {
-    const action = newStatus === 'Active' ? 'mengaktifkan' : 'menonaktifkan';
-    if (!confirm(`Yakin ingin ${action} user ${email}?`)) return;
+    var action = newStatus === 'Active' ? 'mengaktifkan' : 'menonaktifkan';
+    if (!confirm('Yakin ingin ' + action + ' user ' + email + '?')) return;
     
     showLoading(true);
     
@@ -875,12 +807,12 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        if (result.error) {
+        if (result && result.error) {
           alert('Error: ' + result.error);
           return;
         }
         
-        showToast('Berhasil', `Status user ${email} berhasil diubah`, 'success');
+        showToast('Berhasil', 'Status user ' + email + ' berhasil diubah', 'success');
         loadUsers();
       })
       .withFailureHandler(function(err) {
@@ -900,21 +832,32 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        const resultDiv = document.getElementById('importResult');
+        var resultDiv = document.getElementById('importResult');
         
-        if (result.error) {
-          resultDiv.innerHTML = `<div class="alert alert-danger">${result.error}</div>`;
+        if (result && result.error) {
+          resultDiv.innerHTML = '<div class="alert alert-danger">' + result.error + '</div>';
           return;
         }
         
-        resultDiv.innerHTML = `<div class="alert alert-success">Berhasil! ${result.count} item berhasil di-import.</div>`;
+        resultDiv.innerHTML = '<div class="alert alert-success">Berhasil! ' + result.count + ' item berhasil di-import.</div>';
         
-        // Reload filter options
-        loadFilterOptions();
+        // Reload filters
+        google.script.run
+          .withSuccessHandler(function(options) {
+            if (options) {
+              filterOptions.locations = options.locations || [];
+              filterOptions.brands = options.brands || [];
+              filterOptions.categories = options.categories || [];
+              filterOptions.statuses = options.statuses || [];
+              filterOptions.staffList = options.staffList || [];
+            }
+            populateAllDropdowns();
+          })
+          .getFilterOptions();
       })
       .withFailureHandler(function(err) {
         showLoading(false);
-        document.getElementById('importResult').innerHTML = `<div class="alert alert-danger">Error: ${err.message}</div>`;
+        document.getElementById('importResult').innerHTML = '<div class="alert alert-danger">Error: ' + err.message + '</div>';
       })
       .parseCSVFromSheet();
   }
@@ -946,13 +889,13 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        if (result.error) {
+        if (result && result.error) {
           alert('Error: ' + result.error);
           return;
         }
         
         showToast('Berhasil', 'Semua data berhasil di-reset', 'success');
-        loadDashboard();
+        google.script.run.withSuccessHandler(updateDashboard).getDashboardData();
       })
       .withFailureHandler(function(err) {
         showLoading(false);
@@ -970,7 +913,7 @@
       .withSuccessHandler(function(result) {
         showLoading(false);
         
-        if (result.error) {
+        if (result && result.error) {
           alert('Error: ' + result.error);
           return;
         }
@@ -984,33 +927,49 @@
       .clearAllAssignments();
   }
   
-  // ==================== TOAST NOTIFICATIONS ====================
-  function showToast(title, message, type = 'info') {
-    const toastContainer = document.getElementById('toastContainer');
-    if (!toastContainer) {
-      const container = document.createElement('div');
-      container.id = 'toastContainer';
-      container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000;';
-      document.body.appendChild(container);
+  // ==================== UTILITY FUNCTIONS ====================
+  function escapeHtml(text) {
+    if (!text) return '';
+    return String(text)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+  
+  function truncate(str, len) {
+    if (!str) return '';
+    str = String(str);
+    return str.length > len ? str.substring(0, len) + '...' : str;
+  }
+  
+  function showToast(title, message, type) {
+    type = type || 'info';
+    
+    var existingContainer = document.getElementById('toastContainer');
+    if (existingContainer) {
+      existingContainer.remove();
     }
     
-    const bgClass = type === 'success' ? 'bg-success' : type === 'error' ? 'bg-danger' : 'bg-info';
+    var container = document.createElement('div');
+    container.id = 'toastContainer';
+    container.style.cssText = 'position: fixed; top: 20px; right: 20px; z-index: 10000; min-width: 250px;';
+    document.body.appendChild(container);
     
-    const toastHtml = `
-      <div class="toast show ${bgClass} text-white" role="alert">
-        <div class="toast-header ${bgClass} text-white">
-          <strong class="me-auto">${title}</strong>
-          <button type="button" class="btn-close btn-close-white" data-bs-dismiss="toast"></button>
-        </div>
-        <div class="toast-body">${message}</div>
-      </div>
-    `;
+    var bgClass = type === 'success' ? 'bg-success' : (type === 'error' ? 'bg-danger' : 'bg-info');
     
-    document.getElementById('toastContainer').innerHTML = toastHtml;
+    container.innerHTML = 
+      '<div class="toast show ' + bgClass + ' text-white" role="alert">' +
+        '<div class="toast-header ' + bgClass + ' text-white">' +
+          '<strong class="me-auto">' + title + '</strong>' +
+          '<button type="button" class="btn-close btn-close-white" onclick="this.closest(\'.toast\').remove()"></button>' +
+        '</div>' +
+        '<div class="toast-body">' + message + '</div>' +
+      '</div>';
     
-    // Auto hide after 3 seconds
-    setTimeout(() => {
-      const toast = document.querySelector('.toast');
+    setTimeout(function() {
+      var toast = container.querySelector('.toast');
       if (toast) toast.remove();
     }, 3000);
   }
